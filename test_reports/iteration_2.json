@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 2 (Project grouping). Backend: 34/34 pytest pass — new /api/projects CRUD, /summary, project_id+phase filters on /api/backlog, DELETE-project unlinks items (project_id & phase → null). Frontend: Projects nav, /projects grid with 7 seeded codes (SCE/SCR/HRS/WMS/BIM/TMS/INT), create/edit dialog, /projects/:id detail with phase stats & phase sections, Backlog grouped-by-project default with collapsible groups + 'No project' bucket, Grouped/Flat toggle, item dialog with project+phase, project filter with '— No project —' option, and Sprint Board project chip (e.g. 'HRS · P1', 'WMS · P1') all verified working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sopra_pm.py",
+    "/app/backend/tests/test_projects.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 830 lines — close to the >700-line threshold for splitting. Consider extracting routers (projects/backlog/dashboard) and the SEED_* data into separate modules.",
+    "Project DELETE unlinks all backlog items (project_id=null, phase=null) — correct behavior, but worth confirming this is intentional vs deleting items. Current behavior matches problem statement.",
+    "ProjectUpdate, like other Update models, filters None values in PATCH so a field can't be explicitly cleared via API once set (carry-over from iteration 1 review). Low priority since UI rarely needs to null a code/system."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_projects.py (created — 7 test classes, 14 tests covering project CRUD, summary, SCE seed shape, backlog project/phase fields, delete-unlink)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "Backend already auto-seeded by main agent with reset=true: 7 projects (SCE/SCR/HRS/WMS/BIM/TMS/INT), 13 team, 19 sprints, 36 backlog with project_id+phase linkage. Tests create TEST_-prefixed records and clean them up. SCE confirmed to have exactly 6 items spanning Phase 1/2/3.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Two test files: test_sopra_pm.py (20 tests — team/sprint/backlog/dashboard core) and test_projects.py (14 tests — project CRUD/summary/SCE-shape/backlog project+phase fields/delete-unlink). Run together with `pytest /app/backend/tests/ -v --junitxml=/app/test_reports/pytest/pytest_results.xml` — all 34 pass in ~1.5s. Frontend verified: Projects grid, Project Detail (phase-section-Phase-1/2/3 + phase-stat-Phase-1/2/3 testids — note spaces are replaced with hyphens), Backlog grouped default (project-group-{CODE} with 'project-group-unassigned' as no-project bucket), Grouped/Flat toggle (toggle-group-project), item dialog form-phase field, filter-project select with '— No project —', Sprint Board chips formatted 'CODE · P{n}' (e.g. 'HRS · P1'). Drag-drop on board still not automatable via Playwright (carry-over from iteration 1, underlying PATCH verified).",
+  "rca of the issue": "N/A - no bugs found this iteration."
+}

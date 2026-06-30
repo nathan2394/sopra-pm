@@ -7,6 +7,8 @@ import SprintBoard from "@/pages/SprintBoard";
 import Sprints from "@/pages/Sprints";
 import Team from "@/pages/Team";
 import Roadmap from "@/pages/Roadmap";
+import Projects from "@/pages/Projects";
+import ProjectDetail from "@/pages/ProjectDetail";
 import { Toaster } from "@/components/ui/sonner";
 
 function App() {
@@ -15,6 +17,8 @@ function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/backlog" element={<Backlog />} />
           <Route path="/board" element={<SprintBoard />} />
           <Route path="/sprints" element={<Sprints />} />

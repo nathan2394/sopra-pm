@@ -37,6 +37,18 @@ export const updateBacklogItem = (id, data) =>
 export const deleteBacklogItem = (id) =>
   client.delete(`/backlog/${id}`).then((r) => r.data);
 
+// Projects
+export const fetchProjects = () =>
+  client.get("/projects").then((r) => r.data);
+export const createProject = (data) =>
+  client.post("/projects", data).then((r) => r.data);
+export const updateProject = (id, data) =>
+  client.patch(`/projects/${id}`, data).then((r) => r.data);
+export const deleteProject = (id) =>
+  client.delete(`/projects/${id}`).then((r) => r.data);
+export const fetchProjectSummary = (id) =>
+  client.get(`/projects/${id}/summary`).then((r) => r.data);
+
 // Dashboard
 export const fetchSummary = () =>
   client.get("/dashboard/summary").then((r) => r.data);

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
   fetchBacklog,
   fetchTeam,
   fetchSprints,
+  fetchProjects,
   createBacklogItem,
   updateBacklogItem,
   deleteBacklogItem,
@@ -47,6 +49,10 @@ import {
   X,
   PencilSimple,
   Trash,
+  CaretDown,
+  CaretRight,
+  Stack,
+  Rows,
 } from "@phosphor-icons/react";
 
 const emptyItem = {
@@ -55,6 +61,8 @@ const emptyItem = {
   system: "Internal",
   priority: "P2",
   quarter: "Q3 2026",
+  project_id: null,
+  phase: "",
   sprint_id: null,
   dev_assignee_id: null,
   qa_assignee_id: null,
@@ -67,14 +75,18 @@ export default function Backlog() {
   const [items, setItems] = useState([]);
   const [team, setTeam] = useState([]);
   const [sprints, setSprints] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [groupByProject, setGroupByProject] = useState(true);
+  const [collapsed, setCollapsed] = useState({});
   const [filters, setFilters] = useState({
     priority: "all",
     system: "all",
     quarter: "all",
     status: "all",
     sprint_id: "all",
+    project_id: "all",
   });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -82,14 +94,16 @@ export default function Backlog() {
 
   const loadAll = async () => {
     setLoading(true);
-    const [b, t, s] = await Promise.all([
+    const [b, t, s, p] = await Promise.all([
       fetchBacklog(),
       fetchTeam(),
       fetchSprints(),
+      fetchProjects(),
     ]);
     setItems(b);
     setTeam(t);
     setSprints(s);
+    setProjects(p);
     setLoading(false);
   };
 
@@ -110,6 +124,10 @@ export default function Backlog() {
     () => Object.fromEntries(sprints.map((s) => [s.id, s])),
     [sprints],
   );
+  const projectMap = useMemo(
+    () => Object.fromEntries(projects.map((p) => [p.id, p])),
+    [projects],
+  );
 
   const filtered = useMemo(() => {
     return items.filter((i) => {
@@ -118,6 +136,10 @@ export default function Backlog() {
       if (filters.quarter !== "all" && i.quarter !== filters.quarter) return false;
       if (filters.status !== "all" && i.status !== filters.status) return false;
       if (filters.sprint_id !== "all" && i.sprint_id !== filters.sprint_id) return false;
+      if (filters.project_id !== "all") {
+        if (filters.project_id === "_none" && i.project_id) return false;
+        if (filters.project_id !== "_none" && i.project_id !== filters.project_id) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         if (
@@ -131,20 +153,52 @@ export default function Backlog() {
     });
   }, [items, filters, search]);
 
+  // Group items: project -> phase -> items
+  const grouped = useMemo(() => {
+    const map = {};
+    filtered.forEach((i) => {
+      const pkey = i.project_id || "_unassigned";
+      if (!map[pkey]) {
+        map[pkey] = { project: projectMap[i.project_id] || null, phases: {} };
+      }
+      const phkey = i.phase || "Unphased";
+      (map[pkey].phases[phkey] = map[pkey].phases[phkey] || []).push(i);
+    });
+    // Sort phases alphabetically
+    Object.values(map).forEach((g) => {
+      g.phaseList = Object.entries(g.phases).sort(([a], [b]) => a.localeCompare(b));
+      g.totalSp = Object.values(g.phases)
+        .flat()
+        .reduce((a, b) => a + b.story_points, 0);
+      g.totalItems = Object.values(g.phases).flat().length;
+      g.doneSp = Object.values(g.phases)
+        .flat()
+        .reduce((a, b) => (b.status === "Done" ? a + b.story_points : a), 0);
+    });
+    // Sort projects: real projects first by name, then _unassigned
+    const entries = Object.entries(map).sort(([ka, va], [kb, vb]) => {
+      if (ka === "_unassigned") return 1;
+      if (kb === "_unassigned") return -1;
+      return (va.project?.name || "").localeCompare(vb.project?.name || "");
+    });
+    return entries;
+  }, [filtered, projectMap]);
+
   const activeFilters = Object.entries(filters).filter(([, v]) => v !== "all");
 
-  const openCreate = () => {
+  const openCreate = (presets = {}) => {
     setEditing(null);
     setForm({
       ...emptyItem,
       wb_ref: `WB-${String(items.length + 50).padStart(2, "0")}`,
+      ...presets,
     });
     setDialogOpen(true);
   };
 
   const openEdit = (item) => {
     setEditing(item);
-    setForm({ ...item });
+    setForm({ ...emptyItem, ...item, phase: item.phase || "" });
     setDialogOpen(true);
   };
 
@@ -154,6 +208,8 @@ export default function Backlog() {
         ...form,
         story_points: parseInt(form.story_points) || 0,
         sprint_id: form.sprint_id || null,
+        project_id: form.project_id || null,
+        phase: form.phase || null,
         dev_assignee_id: form.dev_assignee_id || null,
         qa_assignee_id: form.qa_assignee_id || null,
       };
@@ -184,6 +240,9 @@ export default function Backlog() {
     loadAll();
   };
 
+  const toggleCollapsed = (key) =>
+    setCollapsed((c) => ({ ...c, [key]: !c[key] }));
+
   return (
     <div className="space-y-4" data-testid="backlog-page">
       {/* Toolbar */}
@@ -203,6 +262,17 @@ export default function Backlog() {
             />
           </div>
 
+          <FilterSelect
+            value={filters.project_id}
+            onChange={(v) => setFilters((f) => ({ ...f, project_id: v }))}
+            options={[
+              { value: "all", label: "All projects" },
+              { value: "_none", label: "— No project —" },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            testId="filter-project"
+            width="w-44"
+          />
           <FilterSelect
             value={filters.priority}
             onChange={(v) => setFilters((f) => ({ ...f, priority: v }))}
@@ -240,8 +310,22 @@ export default function Backlog() {
             testId="filter-status"
           />
 
+          <button
+            onClick={() => setGroupByProject((g) => !g)}
+            className={`h-9 px-3 rounded-sm border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              groupByProject
+                ? "bg-[#0033CC] text-white border-[#0033CC]"
+                : "bg-white text-slate-700 border-slate-200 hover:border-[#0033CC]"
+            }`}
+            data-testid="toggle-group-project"
+            title="Group by project"
+          >
+            {groupByProject ? <Stack size={14} /> : <Rows size={14} />}
+            {groupByProject ? "Grouped" : "Flat"}
+          </button>
+
           <Button
-            onClick={openCreate}
+            onClick={() => openCreate()}
             className="rounded-sm bg-[#0033CC] hover:bg-[#0028A3] h-9"
             data-testid="btn-add-backlog"
           >
@@ -251,7 +335,10 @@ export default function Backlog() {
         </div>
 
         {activeFilters.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap" data-testid="active-filters">
+          <div
+            className="flex items-center gap-2 flex-wrap"
+            data-testid="active-filters"
+          >
             <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
               Active filters:
             </span>
@@ -262,7 +349,14 @@ export default function Backlog() {
                 className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded-sm text-xs font-semibold text-slate-700"
                 data-testid={`chip-${k}`}
               >
-                {k}: {k === "sprint_id" ? sprintMap[v]?.name : v}
+                {k}:{" "}
+                {k === "sprint_id"
+                  ? sprintMap[v]?.name
+                  : k === "project_id"
+                    ? v === "_none"
+                      ? "No project"
+                      : projectMap[v]?.name
+                    : v}
                 <X size={12} />
               </button>
             ))}
@@ -274,6 +368,7 @@ export default function Backlog() {
                   quarter: "all",
                   status: "all",
                   sprint_id: "all",
+                  project_id: "all",
                 })
               }
               className="text-xs text-[#0033CC] font-semibold hover:underline"
@@ -284,146 +379,182 @@ export default function Backlog() {
         )}
       </div>
 
-      {/* Table */}
-      <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full" data-testid="backlog-table">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-                <th className="text-left px-4 py-2.5 font-semibold">Ref</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Title</th>
-                <th className="text-left px-4 py-2.5 font-semibold">System</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Prio</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Quarter</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Sprint</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Dev</th>
-                <th className="text-left px-4 py-2.5 font-semibold">QA</th>
-                <th className="text-right px-4 py-2.5 font-semibold">SP</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Status</th>
-                <th className="w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-slate-400">
-                    Loading…
-                  </td>
-                </tr>
-              )}
-              {!loading && filtered.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-slate-400">
-                    No items match the filters
-                  </td>
-                </tr>
-              )}
-              {filtered.map((i) => (
-                <tr
-                  key={i.id}
-                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                  data-testid={`backlog-row-${i.wb_ref}`}
-                >
-                  <td className="px-4 py-2.5 font-mono text-xs font-semibold text-slate-600">
-                    {i.wb_ref}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <button
-                      onClick={() => openEdit(i)}
-                      className="text-sm font-semibold text-slate-900 hover:text-[#0033CC] text-left"
-                      data-testid={`edit-${i.wb_ref}`}
+      {/* Flat or Grouped View */}
+      {loading ? (
+        <div className="bg-white border border-slate-200 rounded-sm p-12 text-center text-slate-400">
+          Loading…
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-sm p-12 text-center text-slate-400">
+          No items match the filters
+        </div>
+      ) : groupByProject ? (
+        <div className="space-y-4" data-testid="backlog-grouped">
+          {grouped.map(([key, g]) => {
+            const isCollapsed = collapsed[key];
+            const projectColor = g.project?.color || "#94A3B8";
+            const pct =
+              g.totalSp > 0 ? Math.round((g.doneSp / g.totalSp) * 100) : 0;
+            return (
+              <div
+                key={key}
+                className="bg-white border border-slate-200 rounded-sm overflow-hidden"
+                data-testid={`project-group-${g.project?.code || "unassigned"}`}
+              >
+                <div
+                  className="h-1"
+                  style={{ backgroundColor: projectColor }}
+                />
+                <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 hover:bg-slate-50">
+                  <button
+                    onClick={() => toggleCollapsed(key)}
+                    className="flex items-center gap-3 flex-1 text-left"
+                  >
+                    {isCollapsed ? (
+                      <CaretRight size={14} weight="bold" />
+                    ) : (
+                      <CaretDown size={14} weight="bold" />
+                    )}
+                    <div
+                      className="w-7 h-7 rounded-sm flex items-center justify-center text-[10px] font-bold text-white font-mono shrink-0"
+                      style={{ backgroundColor: projectColor }}
                     >
-                      {i.title}
-                    </button>
-                    {i.notes && (
-                      <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">
-                        {i.notes}
+                      {g.project?.code ||
+                        (g.project ? g.project.name.slice(0, 2).toUpperCase() : "—")}
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base text-slate-900 leading-tight">
+                        {g.project?.name || "Unassigned items"}
                       </div>
+                      <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mt-0.5">
+                        {g.phaseList.length} phase
+                        {g.phaseList.length !== 1 ? "s" : ""} ·{" "}
+                        {g.totalItems} items · {g.doneSp}/{g.totalSp} SP ·{" "}
+                        {pct}%
+                      </div>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <div className="w-32 bg-slate-100 rounded-sm h-1.5 overflow-hidden">
+                      <div
+                        className="h-full"
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor:
+                            pct >= 100
+                              ? "#059669"
+                              : pct >= 50
+                                ? "#0033CC"
+                                : "#D97706",
+                        }}
+                      />
+                    </div>
+                    {g.project && (
+                      <Link
+                        to={`/projects/${g.project.id}`}
+                        className="text-xs font-semibold text-[#0033CC] hover:underline px-2 py-1 rounded-sm hover:bg-slate-100"
+                      >
+                        Open
+                      </Link>
                     )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <SystemBadge system={i.system} />
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <PriorityBadge priority={i.priority} />
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
-                    {i.quarter}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
-                    {sprintMap[i.sprint_id]?.name || "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-sm text-slate-700">
-                    {teamMap[i.dev_assignee_id]?.name || (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-sm text-slate-700">
-                    {teamMap[i.qa_assignee_id]?.name || (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
-                    {i.story_points}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <StatusBadge status={i.status} />
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className="p-1 hover:bg-slate-200 rounded-sm"
-                          data-testid={`row-menu-${i.wb_ref}`}
-                        >
-                          <DotsThreeVertical size={16} weight="bold" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(i)}>
-                          <PencilSimple size={14} className="mr-2" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {STATUSES.filter((s) => s !== i.status).map((s) => (
-                          <DropdownMenuItem
-                            key={s}
-                            onClick={() => updateStatus(i, s)}
-                          >
-                            Move to {s}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(i)}
-                          className="text-red-600"
-                        >
-                          <Trash size={14} className="mr-2" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+                {!isCollapsed && (
+                  <div>
+                    {g.phaseList.map(([phase, phItems]) => {
+                      const phSp = phItems.reduce(
+                        (a, b) => a + b.story_points,
+                        0,
+                      );
+                      const phDoneSp = phItems.reduce(
+                        (a, b) => (b.status === "Done" ? a + b.story_points : a),
+                        0,
+                      );
+                      const phPct = phSp > 0 ? Math.round((phDoneSp / phSp) * 100) : 0;
+                      return (
+                        <div key={phase} className="border-t border-slate-100">
+                          <div className="bg-slate-50 px-4 py-2 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 font-bold">
+                                {phase}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                · {phItems.length} item
+                                {phItems.length !== 1 ? "s" : ""}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                                {phDoneSp}/{phSp} SP · {phPct}%
+                              </span>
+                              {g.project && (
+                                <button
+                                  onClick={() =>
+                                    openCreate({
+                                      project_id: g.project.id,
+                                      phase: phase === "Unphased" ? "" : phase,
+                                      system: g.project.system || "Internal",
+                                    })
+                                  }
+                                  className="text-[10px] font-mono uppercase tracking-widest text-[#0033CC] hover:underline"
+                                >
+                                  + add
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <ItemsTable
+                            items={phItems}
+                            teamMap={teamMap}
+                            sprintMap={sprintMap}
+                            onEdit={openEdit}
+                            onStatus={updateStatus}
+                            onDelete={handleDelete}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <div className="border-t border-slate-200 px-4 py-2 flex justify-between text-xs text-slate-500 bg-slate-50">
-          <span>
-            <span className="font-semibold text-slate-900">{filtered.length}</span> /{" "}
-            {items.length} items
-          </span>
-          <span>
-            Total SP:{" "}
-            <span className="font-mono font-bold text-slate-900">
-              {filtered.reduce((a, b) => a + b.story_points, 0)}
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
+          <ItemsTable
+            items={filtered}
+            teamMap={teamMap}
+            sprintMap={sprintMap}
+            projectMap={projectMap}
+            showProject
+            onEdit={openEdit}
+            onStatus={updateStatus}
+            onDelete={handleDelete}
+          />
+          <div className="border-t border-slate-200 px-4 py-2 flex justify-between text-xs text-slate-500 bg-slate-50">
+            <span>
+              <span className="font-semibold text-slate-900">
+                {filtered.length}
+              </span>{" "}
+              / {items.length} items
             </span>
-          </span>
+            <span>
+              Total SP:{" "}
+              <span className="font-mono font-bold text-slate-900">
+                {filtered.reduce((a, b) => a + b.story_points, 0)}
+              </span>
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="rounded-sm max-w-2xl" data-testid="item-dialog">
+        <DialogContent
+          className="rounded-sm max-w-2xl max-h-[90vh] overflow-y-auto"
+          data-testid="item-dialog"
+        >
           <DialogHeader>
             <DialogTitle className="font-display font-black tracking-tight">
               {editing ? `Edit ${editing.wb_ref}` : "New Backlog Item"}
@@ -465,6 +596,35 @@ export default function Backlog() {
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 className="rounded-sm"
                 data-testid="form-title"
+              />
+            </div>
+
+            <SelectField
+              label="Project"
+              value={form.project_id || "_none"}
+              onChange={(v) =>
+                setForm({ ...form, project_id: v === "_none" ? null : v })
+              }
+              options={[
+                { value: "_none", label: "— No project —" },
+                ...projects.map((p) => ({
+                  value: p.id,
+                  label: `${p.code || ""} · ${p.name}`.trim(),
+                })),
+              ]}
+              testId="form-project"
+            />
+            <div className="space-y-1.5">
+              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                Phase (within project)
+              </Label>
+              <Input
+                value={form.phase || ""}
+                onChange={(e) => setForm({ ...form, phase: e.target.value })}
+                placeholder="e.g. Phase 1, Phase 2"
+                className="rounded-sm"
+                disabled={!form.project_id}
+                data-testid="form-phase"
               />
             </div>
 
@@ -519,8 +679,13 @@ export default function Backlog() {
               options={[
                 { value: "_none", label: "— Unassigned —" },
                 ...team
-                  .filter((t) => t.role === "Backend Dev" || t.role === "Product Manager")
-                  .map((t) => ({ value: t.id, label: `${t.name} · ${t.role}` })),
+                  .filter(
+                    (t) => t.role === "Backend Dev" || t.role === "Product Manager",
+                  )
+                  .map((t) => ({
+                    value: t.id,
+                    label: `${t.name} · ${t.role}`,
+                  })),
               ]}
               testId="form-dev"
             />
@@ -601,10 +766,153 @@ export default function Backlog() {
   );
 }
 
-function FilterSelect({ value, onChange, options, testId }) {
+function ItemsTable({
+  items,
+  teamMap,
+  sprintMap,
+  projectMap,
+  showProject = false,
+  onEdit,
+  onStatus,
+  onDelete,
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full" data-testid="backlog-table">
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+            <th className="text-left px-4 py-2.5 font-semibold">Ref</th>
+            <th className="text-left px-4 py-2.5 font-semibold">Title</th>
+            {showProject && (
+              <th className="text-left px-4 py-2.5 font-semibold">Project</th>
+            )}
+            <th className="text-left px-4 py-2.5 font-semibold">System</th>
+            <th className="text-left px-4 py-2.5 font-semibold">Prio</th>
+            <th className="text-left px-4 py-2.5 font-semibold">Sprint</th>
+            <th className="text-left px-4 py-2.5 font-semibold">Dev</th>
+            <th className="text-left px-4 py-2.5 font-semibold">QA</th>
+            <th className="text-right px-4 py-2.5 font-semibold">SP</th>
+            <th className="text-left px-4 py-2.5 font-semibold">Status</th>
+            <th className="w-10"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((i) => (
+            <tr
+              key={i.id}
+              className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+              data-testid={`backlog-row-${i.wb_ref}`}
+            >
+              <td className="px-4 py-2.5 font-mono text-xs font-semibold text-slate-600">
+                {i.wb_ref}
+              </td>
+              <td className="px-4 py-2.5">
+                <button
+                  onClick={() => onEdit(i)}
+                  className="text-sm font-semibold text-slate-900 hover:text-[#0033CC] text-left"
+                  data-testid={`edit-${i.wb_ref}`}
+                >
+                  {i.title}
+                </button>
+                {i.notes && (
+                  <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">
+                    {i.notes}
+                  </div>
+                )}
+              </td>
+              {showProject && (
+                <td className="px-4 py-2.5">
+                  {i.project_id && projectMap?.[i.project_id] ? (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="px-1.5 py-0.5 rounded-sm text-[10px] font-bold text-white font-mono"
+                        style={{
+                          backgroundColor: projectMap[i.project_id].color,
+                        }}
+                      >
+                        {projectMap[i.project_id].code || "—"}
+                      </span>
+                      {i.phase && (
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          · {i.phase}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+              )}
+              <td className="px-4 py-2.5">
+                <SystemBadge system={i.system} />
+              </td>
+              <td className="px-4 py-2.5">
+                <PriorityBadge priority={i.priority} />
+              </td>
+              <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
+                {sprintMap[i.sprint_id]?.name || "—"}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-700">
+                {teamMap[i.dev_assignee_id]?.name || (
+                  <span className="text-slate-400">—</span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-700">
+                {teamMap[i.qa_assignee_id]?.name || (
+                  <span className="text-slate-400">—</span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
+                {i.story_points}
+              </td>
+              <td className="px-4 py-2.5">
+                <StatusBadge status={i.status} />
+              </td>
+              <td className="px-2 py-2.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="p-1 hover:bg-slate-200 rounded-sm"
+                      data-testid={`row-menu-${i.wb_ref}`}
+                    >
+                      <DotsThreeVertical size={16} weight="bold" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEdit(i)}>
+                      <PencilSimple size={14} className="mr-2" /> Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {STATUSES.filter((s) => s !== i.status).map((s) => (
+                      <DropdownMenuItem
+                        key={s}
+                        onClick={() => onStatus(i, s)}
+                      >
+                        Move to {s}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => onDelete(i)}
+                      className="text-red-600"
+                    >
+                      <Trash size={14} className="mr-2" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FilterSelect({ value, onChange, options, testId, width = "w-40" }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-9 rounded-sm w-40" data-testid={testId}>
+      <SelectTrigger className={`h-9 rounded-sm ${width}`} data-testid={testId}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

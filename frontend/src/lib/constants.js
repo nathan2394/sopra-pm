@@ -42,3 +42,17 @@ export const ROLES = [
   "UI/UX",
 ];
 export const SPRINT_STATUSES = ["Planned", "Active", "Completed"];
+export const PROJECT_STATUSES = ["Active", "Paused", "Completed", "Archived"];
+export const PROJECT_COLORS = [
+  "#0033CC",
+  "#4338CA",
+  "#7C3AED",
+  "#0369A1",
+  "#047857",
+  "#B91C1C",
+  "#D97706",
+  "#BE185D",
+  "#854D0E",
+  "#0F766E",
+  "#374151",
+];

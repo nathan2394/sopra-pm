@@ -5,6 +5,7 @@ import {
   fetchBacklog,
   fetchTeam,
   fetchSprints,
+  fetchProjects,
   updateBacklogItem,
 } from "@/lib/api";
 import { STATUSES } from "@/lib/constants";
@@ -29,17 +30,20 @@ export default function SprintBoard() {
   const [items, setItems] = useState([]);
   const [team, setTeam] = useState([]);
   const [sprints, setSprints] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [selectedSprint, setSelectedSprint] = useState(null);
 
   const load = async () => {
-    const [b, t, s] = await Promise.all([
+    const [b, t, s, p] = await Promise.all([
       fetchBacklog(),
       fetchTeam(),
       fetchSprints(),
+      fetchProjects(),
     ]);
     setItems(b);
     setTeam(t);
     setSprints(s);
+    setProjects(p);
     if (!selectedSprint && s.length > 0) {
       const active = s.find((x) => x.status === "Active");
       setSelectedSprint(active?.id || s[0].id);
@@ -53,6 +57,10 @@ export default function SprintBoard() {
   const teamMap = useMemo(
     () => Object.fromEntries(team.map((t) => [t.id, t])),
     [team],
+  );
+  const projectMap = useMemo(
+    () => Object.fromEntries(projects.map((p) => [p.id, p])),
+    [projects],
   );
 
   const sprintItems = useMemo(
@@ -191,11 +199,29 @@ export default function SprintBoard() {
                                   <DotsSixVertical size={14} weight="bold" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 mb-1">
+                                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                     <span className="font-mono text-[10px] font-bold text-slate-500">
                                       {item.wb_ref}
                                     </span>
                                     <PriorityBadge priority={item.priority} />
+                                    {item.project_id &&
+                                      projectMap[item.project_id] && (
+                                        <span
+                                          className="px-1.5 py-0.5 rounded-sm text-[9px] font-bold text-white font-mono"
+                                          style={{
+                                            backgroundColor:
+                                              projectMap[item.project_id].color,
+                                          }}
+                                          title={
+                                            projectMap[item.project_id].name +
+                                            (item.phase ? ` · ${item.phase}` : "")
+                                          }
+                                        >
+                                          {projectMap[item.project_id].code ||
+                                            "PRJ"}
+                                          {item.phase ? ` · ${item.phase.replace("Phase ", "P")}` : ""}
+                                        </span>
+                                      )}
                                   </div>
                                   <div className="text-sm font-semibold text-slate-900 leading-tight mb-2">
                                     {item.title}

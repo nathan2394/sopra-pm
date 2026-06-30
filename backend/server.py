@@ -108,6 +108,8 @@ class BacklogItem(BaseModel):
     system: str  # WMS, Ecommerce, HRIS, BIMA, Nexora, Internal, Security
     priority: str  # P1, P2, P3, P4
     quarter: str
+    project_id: Optional[str] = None
+    phase: Optional[str] = None  # e.g. "Phase 1", "Phase 2"
     sprint_id: Optional[str] = None
     dev_assignee_id: Optional[str] = None
     qa_assignee_id: Optional[str] = None
@@ -127,6 +129,8 @@ class BacklogItemCreate(BaseModel):
     system: str
     priority: str
     quarter: str
+    project_id: Optional[str] = None
+    phase: Optional[str] = None
     sprint_id: Optional[str] = None
     dev_assignee_id: Optional[str] = None
     qa_assignee_id: Optional[str] = None
@@ -144,6 +148,8 @@ class BacklogItemUpdate(BaseModel):
     system: Optional[str] = None
     priority: Optional[str] = None
     quarter: Optional[str] = None
+    project_id: Optional[str] = None
+    phase: Optional[str] = None
     sprint_id: Optional[str] = None
     dev_assignee_id: Optional[str] = None
     qa_assignee_id: Optional[str] = None
@@ -153,6 +159,39 @@ class BacklogItemUpdate(BaseModel):
     percent_done: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+
+
+class Project(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    code: Optional[str] = None  # short code, e.g. "SCE"
+    description: Optional[str] = None
+    system: Optional[str] = None  # default system tag
+    owner_id: Optional[str] = None  # team member id
+    color: str = "#0033CC"
+    status: str = "Active"  # Active, Paused, Completed, Archived
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    code: Optional[str] = None
+    description: Optional[str] = None
+    system: Optional[str] = None
+    owner_id: Optional[str] = None
+    color: str = "#0033CC"
+    status: str = "Active"
+
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    system: Optional[str] = None
+    owner_id: Optional[str] = None
+    color: Optional[str] = None
+    status: Optional[str] = None
 
 
 # ====================== Team Members ======================
@@ -252,6 +291,95 @@ async def delete_sprint(sprint_id: str):
     return {"ok": True}
 
 
+# ====================== Projects ======================
+@api_router.get("/projects", response_model=List[Project])
+async def list_projects():
+    docs = await db.projects.find({}, {"_id": 0}).to_list(1000)
+    return [Project(**d) for d in docs]
+
+
+@api_router.post("/projects", response_model=Project)
+async def create_project(data: ProjectCreate):
+    project = Project(**data.model_dump())
+    await db.projects.insert_one(project.model_dump())
+    return project
+
+
+@api_router.get("/projects/{project_id}", response_model=Project)
+async def get_project(project_id: str):
+    doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return Project(**doc)
+
+
+@api_router.patch("/projects/{project_id}", response_model=Project)
+async def update_project(project_id: str, data: ProjectUpdate):
+    update = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update:
+        doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return Project(**doc)
+    result = await db.projects.find_one_and_update(
+        {"id": project_id}, {"$set": update},
+        return_document=True, projection={"_id": 0}
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return Project(**result)
+
+
+@api_router.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    result = await db.projects.delete_one({"id": project_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Project not found")
+    # Detach project_id from backlog items
+    await db.backlog.update_many({"project_id": project_id}, {"$set": {"project_id": None, "phase": None}})
+    return {"ok": True}
+
+
+@api_router.get("/projects/{project_id}/summary")
+async def project_summary(project_id: str):
+    doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Project not found")
+    items = await db.backlog.find({"project_id": project_id}, {"_id": 0}).to_list(2000)
+    total_sp = sum(i.get("story_points", 0) for i in items)
+    done_sp = sum(i.get("story_points", 0) for i in items if i.get("status") == "Done")
+    # group by phase
+    phases: dict = {}
+    for i in items:
+        ph = i.get("phase") or "Unphased"
+        if ph not in phases:
+            phases[ph] = {"phase": ph, "items": 0, "total_sp": 0, "done_sp": 0,
+                          "in_progress": 0, "in_review": 0, "backlog": 0, "done": 0}
+        phases[ph]["items"] += 1
+        phases[ph]["total_sp"] += i.get("story_points", 0)
+        st = i.get("status", "Backlog")
+        if st == "Done":
+            phases[ph]["done_sp"] += i.get("story_points", 0)
+            phases[ph]["done"] += 1
+        elif st == "In Progress":
+            phases[ph]["in_progress"] += 1
+        elif st == "In Review":
+            phases[ph]["in_review"] += 1
+        else:
+            phases[ph]["backlog"] += 1
+    phase_list = sorted(phases.values(), key=lambda p: p["phase"])
+    for p in phase_list:
+        p["completion_pct"] = round((p["done_sp"] / p["total_sp"] * 100) if p["total_sp"] > 0 else 0, 1)
+    return {
+        "project": doc,
+        "items": len(items),
+        "total_sp": total_sp,
+        "done_sp": done_sp,
+        "completion_pct": round((done_sp / total_sp * 100) if total_sp > 0 else 0, 1),
+        "phases": phase_list,
+    }
+
+
 # ====================== Backlog Items ======================
 @api_router.get("/backlog", response_model=List[BacklogItem])
 async def list_backlog(
@@ -261,6 +389,8 @@ async def list_backlog(
     sprint_id: Optional[str] = None,
     status: Optional[str] = None,
     dev_assignee_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    phase: Optional[str] = None,
 ):
     query: dict = {}
     if priority:
@@ -275,6 +405,10 @@ async def list_backlog(
         query["status"] = status
     if dev_assignee_id:
         query["dev_assignee_id"] = dev_assignee_id
+    if project_id:
+        query["project_id"] = project_id
+    if phase:
+        query["phase"] = phase
     docs = await db.backlog.find(query, {"_id": 0}).to_list(2000)
     return [BacklogItem(**d) for d in docs]
 
@@ -442,6 +576,30 @@ async def dashboard_team_workload():
 
 
 # ====================== Seed ======================
+SEED_PROJECTS = [
+    {"name": "Sopra Cash Engine", "code": "SCE", "system": "Nexora",
+     "description": "Phase 1: Migrasi forecast dari Excel. Phase 2: Realisasi bank dari mutasi bank. Phase 3: Integrasi realisasi ke SAP (konsolidasi).",
+     "color": "#4338CA", "status": "Active", "owner": "Nathan"},
+    {"name": "Sopra Commerce Revamp", "code": "SCR", "system": "Ecommerce",
+     "description": "Revamp ecommerce — Catalog & frontend modernization, payment flows, vendor portal.",
+     "color": "#854D0E", "status": "Active", "owner": "Okhy"},
+    {"name": "HRIS SOPRA", "code": "HRS", "system": "HRIS",
+     "description": "End-to-end HR Information System: core, employee dashboard, attendance device integrations.",
+     "color": "#047857", "status": "Active", "owner": "Abhi"},
+    {"name": "WMS Modernization", "code": "WMS", "system": "WMS",
+     "description": "Warehouse Management — rework, sister-company multi-entity, stok health RFID, DI champions.",
+     "color": "#0369A1", "status": "Active", "owner": "Andre"},
+    {"name": "BIMA Suite", "code": "BIM", "system": "BIMA",
+     "description": "Sales activation: PPC+NPD, interactive sales, dealer reminders, sales-purch collaboration.",
+     "color": "#BE185D", "status": "Active", "owner": "Nadir"},
+    {"name": "TMS Delivery", "code": "TMS", "system": "Ecommerce",
+     "description": "Transport Management — Proof of Delivery, shipping value added, logistics queue.",
+     "color": "#B91C1C", "status": "Active", "owner": "Nadir"},
+    {"name": "Internal Platforms", "code": "INT", "system": "Internal",
+     "description": "Internal tooling: KPI dashboard, audit, e-sign, search engine, podcast.",
+     "color": "#374151", "status": "Active", "owner": "Finta"},
+]
+
 SEED_TEAM = [
     {"name": "Nathan", "role": "Product Manager", "areas": ["Nexora", "Internal"],
      "rules": "SAP Integration & Nexora Cash Engine ONLY", "capacity_sp": 20, "avatar_color": "#0033CC"},
@@ -489,55 +647,55 @@ SEED_SPRINTS = [
 
 SEED_BACKLOG = [
     # Q3 2026 - Sprint 1 (P1)
-    {"wb_ref": "WB-01", "title": "KPI Dashboard", "system": "Internal", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Finta", "qa": None, "sp": 8, "notes": "Owner Finta (delivery dashboard)"},
-    {"wb_ref": "WB-02", "title": "HRIS SOPRA", "system": "HRIS", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Abhi", "qa": "Finta", "sp": 8, "notes": "Core HRIS for SOPRA"},
-    {"wb_ref": "WB-04", "title": "Rework WMS", "system": "WMS", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Andre", "qa": "Michael", "sp": 8, "notes": "WMS rework primary"},
-    {"wb_ref": "WB-05", "title": "Ekspedisi Queue", "system": "Ecommerce", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi"},
+    {"wb_ref": "WB-01", "title": "KPI Dashboard", "system": "Internal", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Finta", "qa": None, "sp": 8, "notes": "Owner Finta (delivery dashboard)", "project": "INT", "phase": "Phase 1"},
+    {"wb_ref": "WB-02", "title": "HRIS SOPRA", "system": "HRIS", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Abhi", "qa": "Finta", "sp": 8, "notes": "Core HRIS for SOPRA", "project": "HRS", "phase": "Phase 1"},
+    {"wb_ref": "WB-04", "title": "Rework WMS", "system": "WMS", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Andre", "qa": "Michael", "sp": 8, "notes": "WMS rework primary", "project": "WMS", "phase": "Phase 1"},
+    {"wb_ref": "WB-05", "title": "Ekspedisi Queue", "system": "Ecommerce", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 1, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi", "project": "TMS", "phase": "Phase 1"},
     # Sprint 2 (P1)
-    {"wb_ref": "WB-11", "title": "Payment Gateway BCA", "system": "Ecommerce", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 2, "dev": "Abhi", "qa": "Michael", "sp": 8, "notes": "BCA PG integration"},
-    {"wb_ref": "WB-20", "title": "Nexora Approval – Transfer Token", "system": "Nexora", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 2, "dev": "Nathan", "qa": "Finta", "sp": 8, "notes": "Cash Engine → Nathan"},
-    {"wb_ref": "WB-23", "title": "TOTP (2FA)", "system": "Security", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 2, "dev": "Nadir", "qa": "Michael", "sp": 6, "notes": "Two-factor auth"},
+    {"wb_ref": "WB-11", "title": "Payment Gateway BCA", "system": "Ecommerce", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 2, "dev": "Abhi", "qa": "Michael", "sp": 8, "notes": "BCA PG integration", "project": "SCR", "phase": "Phase 1"},
+    {"wb_ref": "WB-20", "title": "Nexora Approval – Transfer Token", "system": "Nexora", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 2, "dev": "Nathan", "qa": "Finta", "sp": 8, "notes": "Cash Engine → Nathan", "project": "SCE", "phase": "Phase 1"},
+    {"wb_ref": "WB-23", "title": "TOTP (2FA)", "system": "Security", "priority": "P1", "quarter": "Q3 2026", "sprint_num": 2, "dev": "Nadir", "qa": "Michael", "sp": 6, "notes": "Two-factor auth", "project": None, "phase": None},
     # Sprint 3 (P2)
-    {"wb_ref": "WB-06", "title": "Trasmi Dashboard", "system": "Internal", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": None, "qa": None, "sp": 6, "notes": "Pending assignment"},
-    {"wb_ref": "WB-12", "title": "RFD Ecommerce", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi"},
-    {"wb_ref": "WB-13", "title": "Dashboard & Notif Ecom (Mobile)", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Mobile ecom UX"},
-    {"wb_ref": "WB-16", "title": "BIMA Interaktif (Sales)", "system": "BIMA", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Sales interactive"},
+    {"wb_ref": "WB-06", "title": "Trasmi Dashboard", "system": "Internal", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": None, "qa": None, "sp": 6, "notes": "Pending assignment", "project": "INT", "phase": "Phase 2"},
+    {"wb_ref": "WB-12", "title": "RFD Ecommerce", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi", "project": "SCR", "phase": "Phase 1"},
+    {"wb_ref": "WB-13", "title": "Dashboard & Notif Ecom (Mobile)", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Mobile ecom UX", "project": "SCR", "phase": "Phase 1"},
+    {"wb_ref": "WB-16", "title": "BIMA Interaktif (Sales)", "system": "BIMA", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 3, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Sales interactive", "project": "BIM", "phase": "Phase 1"},
     # Sprint 4 (P2)
-    {"wb_ref": "WB-19", "title": "BIMA PPC + NPD", "system": "BIMA", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Andre", "qa": "Michael", "sp": 6, "notes": "PPC & NPD module"},
-    {"wb_ref": "WB-34", "title": "HRIS Employee Dashboard", "system": "HRIS", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Employee self-service"},
-    {"wb_ref": "WB-39", "title": "EIL Audit", "system": "Internal", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Andre", "qa": "Michael", "sp": 6, "notes": "Audit module"},
-    {"wb_ref": "WB-43", "title": "TMS – Proof of Delivery", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Nadir (TMS); QR handheld → Ignas"},
+    {"wb_ref": "WB-19", "title": "BIMA PPC + NPD", "system": "BIMA", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Andre", "qa": "Michael", "sp": 6, "notes": "PPC & NPD module", "project": "BIM", "phase": "Phase 1"},
+    {"wb_ref": "WB-34", "title": "HRIS Employee Dashboard", "system": "HRIS", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Employee self-service", "project": "HRS", "phase": "Phase 2"},
+    {"wb_ref": "WB-39", "title": "EIL Audit", "system": "Internal", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Andre", "qa": "Michael", "sp": 6, "notes": "Audit module", "project": "INT", "phase": "Phase 2"},
+    {"wb_ref": "WB-43", "title": "TMS – Proof of Delivery", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 4, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Nadir (TMS); QR handheld → Ignas", "project": "TMS", "phase": "Phase 2"},
     # Sprint 5 (P2)
-    {"wb_ref": "WB-48", "title": "Dashboard Ecom (NEW) + Support", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 5, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "New ecom dashboard"},
-    {"wb_ref": "WB-15", "title": "Stok Health RFID", "system": "WMS", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 5, "dev": "Ignas", "qa": "Finta", "sp": 6, "notes": "Handheld RFID → Ignas"},
+    {"wb_ref": "WB-48", "title": "Dashboard Ecom (NEW) + Support", "system": "Ecommerce", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 5, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "New ecom dashboard", "project": "SCR", "phase": "Phase 2"},
+    {"wb_ref": "WB-15", "title": "Stok Health RFID", "system": "WMS", "priority": "P2", "quarter": "Q3 2026", "sprint_num": 5, "dev": "Ignas", "qa": "Finta", "sp": 6, "notes": "Handheld RFID → Ignas", "project": "WMS", "phase": "Phase 2"},
     # Q4 2026 - Sprint 7
-    {"wb_ref": "WB-21", "title": "Nexora Approval – Dokumen SAP", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 7, "dev": "Nathan", "qa": "Michael", "sp": 8, "notes": "SAP Integration → Nathan"},
-    {"wb_ref": "WB-22", "title": "Nexora Approval – Integration", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 7, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Integration layer"},
-    {"wb_ref": "WB-24", "title": "WMS Sister Company", "system": "WMS", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 7, "dev": "Andre", "qa": "Michael", "sp": 6, "notes": "Multi-entity WMS"},
+    {"wb_ref": "WB-21", "title": "Nexora Approval – Dokumen SAP", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 7, "dev": "Nathan", "qa": "Michael", "sp": 8, "notes": "SAP Integration → Nathan", "project": "SCE", "phase": "Phase 3"},
+    {"wb_ref": "WB-22", "title": "Nexora Approval – Integration", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 7, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Integration layer", "project": "SCE", "phase": "Phase 3"},
+    {"wb_ref": "WB-24", "title": "WMS Sister Company", "system": "WMS", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 7, "dev": "Andre", "qa": "Michael", "sp": 6, "notes": "Multi-entity WMS", "project": "WMS", "phase": "Phase 3"},
     # Sprint 8
-    {"wb_ref": "WB-25", "title": "Revamp Catalog", "system": "Ecommerce", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 8, "dev": "Okhy", "qa": "Finta", "sp": 8, "notes": "Okhy fokus revamp ecommerce"},
-    {"wb_ref": "WB-38", "title": "Integrasi PO – DPR Nagora SAP", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 8, "dev": "Nathan", "qa": "Michael", "sp": 6, "notes": "SAP Integration → Nathan"},
-    {"wb_ref": "WB-45", "title": "Nexora ONE – Approval Credit", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 8, "dev": "Nathan", "qa": "Finta", "sp": 5, "notes": "Cash Engine → Nathan"},
+    {"wb_ref": "WB-25", "title": "Revamp Catalog", "system": "Ecommerce", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 8, "dev": "Okhy", "qa": "Finta", "sp": 8, "notes": "Okhy fokus revamp ecommerce", "project": "SCR", "phase": "Phase 2"},
+    {"wb_ref": "WB-38", "title": "Integrasi PO – DPR Nagora SAP", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 8, "dev": "Nathan", "qa": "Michael", "sp": 6, "notes": "SAP Integration → Nathan", "project": "SCE", "phase": "Phase 3"},
+    {"wb_ref": "WB-45", "title": "Nexora ONE – Approval Credit", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 8, "dev": "Nathan", "qa": "Finta", "sp": 5, "notes": "Cash Engine → Nathan", "project": "SCE", "phase": "Phase 2"},
     # Sprint 9
-    {"wb_ref": "WB-46", "title": "Nexora ONE – Approval HET", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 9, "dev": "Nathan", "qa": "Michael", "sp": 8, "notes": "Cash Engine → Nathan"},
+    {"wb_ref": "WB-46", "title": "Nexora ONE – Approval HET", "system": "Nexora", "priority": "P2", "quarter": "Q4 2026", "sprint_num": 9, "dev": "Nathan", "qa": "Michael", "sp": 8, "notes": "Cash Engine → Nathan", "project": "SCE", "phase": "Phase 2"},
     # Q1 2027 - Sprint 13
-    {"wb_ref": "WB-18", "title": "DI Champions (WMS)", "system": "WMS", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 13, "dev": "Andre", "qa": "Finta", "sp": 6, "notes": "Continuous improvement"},
-    {"wb_ref": "WB-32", "title": "Portal External Vendor", "system": "Ecommerce", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 13, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi"},
-    {"wb_ref": "WB-33", "title": "Esign E-Materai & Eloktur", "system": "Internal", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 13, "dev": None, "qa": "Finta", "sp": 6, "notes": "Pending dev assignment"},
+    {"wb_ref": "WB-18", "title": "DI Champions (WMS)", "system": "WMS", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 13, "dev": "Andre", "qa": "Finta", "sp": 6, "notes": "Continuous improvement", "project": "WMS", "phase": "Phase 4"},
+    {"wb_ref": "WB-32", "title": "Portal External Vendor", "system": "Ecommerce", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 13, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi", "project": "SCR", "phase": "Phase 3"},
+    {"wb_ref": "WB-33", "title": "Esign E-Materai & Eloktur", "system": "Internal", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 13, "dev": None, "qa": "Finta", "sp": 6, "notes": "Pending dev assignment", "project": "INT", "phase": "Phase 3"},
     # Sprint 14
-    {"wb_ref": "WB-35", "title": "BIMA – Colab Sales & Purch", "system": "BIMA", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 14, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Collaboration sales & purch"},
-    {"wb_ref": "WB-36", "title": "Absen Registrasi (Fingerspot)", "system": "HRIS", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 14, "dev": "Ignas", "qa": "Finta", "sp": 6, "notes": "Device integration → Ignas"},
+    {"wb_ref": "WB-35", "title": "BIMA – Colab Sales & Purch", "system": "BIMA", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 14, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Collaboration sales & purch", "project": "BIM", "phase": "Phase 2"},
+    {"wb_ref": "WB-36", "title": "Absen Registrasi (Fingerspot)", "system": "HRIS", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 14, "dev": "Ignas", "qa": "Finta", "sp": 6, "notes": "Device integration → Ignas", "project": "HRS", "phase": "Phase 3"},
     # Sprint 15
-    {"wb_ref": "WB-40", "title": "Nexora Commerce", "system": "Nexora", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 15, "dev": "Nadir", "qa": "Michael", "sp": 6, "notes": "Commerce extension"},
-    {"wb_ref": "WB-41", "title": "Nexora Assurance", "system": "Nexora", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 15, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Assurance module"},
+    {"wb_ref": "WB-40", "title": "Nexora Commerce", "system": "Nexora", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 15, "dev": "Nadir", "qa": "Michael", "sp": 6, "notes": "Commerce extension", "project": None, "phase": None},
+    {"wb_ref": "WB-41", "title": "Nexora Assurance", "system": "Nexora", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 15, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Assurance module", "project": None, "phase": None},
     # Sprint 16
-    {"wb_ref": "WB-42", "title": "Search Engine Rufi's", "system": "Internal", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 16, "dev": None, "qa": "Michael", "sp": 6, "notes": "Pending dev assignment"},
-    {"wb_ref": "WB-44", "title": "BIMA – Dealer Active Reminder", "system": "BIMA", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 16, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Nadir"},
+    {"wb_ref": "WB-42", "title": "Search Engine Rufi's", "system": "Internal", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 16, "dev": None, "qa": "Michael", "sp": 6, "notes": "Pending dev assignment", "project": "INT", "phase": "Phase 4"},
+    {"wb_ref": "WB-44", "title": "BIMA – Dealer Active Reminder", "system": "BIMA", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 16, "dev": "Nadir", "qa": "Finta", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Nadir", "project": "BIM", "phase": "Phase 3"},
     # Sprint 17
-    {"wb_ref": "WB-47", "title": "VAS – Value Added Shipping", "system": "Ecommerce", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 17, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi"},
-    {"wb_ref": "WB-49", "title": "LIO – Listen Identity Ordament", "system": "Ecommerce", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 17, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Identity service"},
+    {"wb_ref": "WB-47", "title": "VAS – Value Added Shipping", "system": "Ecommerce", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 17, "dev": "Abhi", "qa": "Michael", "sp": 6, "notes": "Okhy → hanya Revamp; re-assign ke Abhi", "project": "TMS", "phase": "Phase 3"},
+    {"wb_ref": "WB-49", "title": "LIO – Listen Identity Ordament", "system": "Ecommerce", "priority": "P3", "quarter": "Q1 2027", "sprint_num": 17, "dev": "Abhi", "qa": "Finta", "sp": 6, "notes": "Identity service", "project": "SCR", "phase": "Phase 3"},
     # Q2 2027 - Sprint 19
-    {"wb_ref": "WB-37", "title": "Podcast System", "system": "Internal", "priority": "P4", "quarter": "Q2 2027", "sprint_num": 19, "dev": None, "qa": None, "sp": 3, "notes": "Internal podcast platform"},
+    {"wb_ref": "WB-37", "title": "Podcast System", "system": "Internal", "priority": "P4", "quarter": "Q2 2027", "sprint_num": 19, "dev": None, "qa": None, "sp": 3, "notes": "Internal podcast platform", "project": "INT", "phase": "Phase 4"},
 ]
 
 
@@ -547,13 +705,15 @@ async def seed_data(reset: bool = Query(False)):
         await db.team_members.delete_many({})
         await db.sprints.delete_many({})
         await db.backlog.delete_many({})
+        await db.projects.delete_many({})
 
     # Check existing
     existing_team = await db.team_members.count_documents({})
     existing_sprints = await db.sprints.count_documents({})
     existing_backlog = await db.backlog.count_documents({})
-    if existing_team and existing_sprints and existing_backlog and not reset:
-        return {"ok": True, "message": "Already seeded", "team": existing_team, "sprints": existing_sprints, "backlog": existing_backlog}
+    existing_projects = await db.projects.count_documents({})
+    if existing_team and existing_sprints and existing_backlog and existing_projects and not reset:
+        return {"ok": True, "message": "Already seeded", "team": existing_team, "sprints": existing_sprints, "backlog": existing_backlog, "projects": existing_projects}
 
     # Team
     name_to_id = {}
@@ -567,6 +727,24 @@ async def seed_data(reset: bool = Query(False)):
     else:
         for d in await db.team_members.find({}, {"_id": 0}).to_list(1000):
             name_to_id[d["name"]] = d["id"]
+
+    # Projects
+    code_to_project_id = {}
+    if existing_projects == 0 or reset:
+        project_docs = []
+        for p in SEED_PROJECTS:
+            owner_name = p.pop("owner", None)
+            proj = Project(
+                **p,
+                owner_id=name_to_id.get(owner_name) if owner_name else None,
+            )
+            project_docs.append(proj.model_dump())
+            code_to_project_id[p["code"]] = proj.id
+        await db.projects.insert_many(project_docs)
+    else:
+        for d in await db.projects.find({}, {"_id": 0}).to_list(1000):
+            if d.get("code"):
+                code_to_project_id[d["code"]] = d["id"]
 
     # Sprints
     sprint_num_to_id = {}
@@ -602,6 +780,8 @@ async def seed_data(reset: bool = Query(False)):
                 system=b["system"],
                 priority=b["priority"],
                 quarter=b["quarter"],
+                project_id=code_to_project_id.get(b.get("project")) if b.get("project") else None,
+                phase=b.get("phase"),
                 sprint_id=sprint_num_to_id.get(b["sprint_num"]),
                 dev_assignee_id=name_to_id.get(b["dev"]) if b.get("dev") else None,
                 qa_assignee_id=name_to_id.get(b["qa"]) if b.get("qa") else None,
@@ -614,7 +794,7 @@ async def seed_data(reset: bool = Query(False)):
             backlog_docs.append(item.model_dump())
         await db.backlog.insert_many(backlog_docs)
 
-    return {"ok": True, "message": "Seeded", "team": len(SEED_TEAM), "sprints": len(SEED_SPRINTS), "backlog": len(SEED_BACKLOG)}
+    return {"ok": True, "message": "Seeded", "team": len(SEED_TEAM), "sprints": len(SEED_SPRINTS), "backlog": len(SEED_BACKLOG), "projects": len(SEED_PROJECTS)}
 
 
 @api_router.get("/")

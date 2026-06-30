@@ -7,10 +7,12 @@ import {
   Calendar,
   GridFour,
   Lightning,
+  FolderOpen,
 } from "@phosphor-icons/react";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: ChartLine, testId: "nav-dashboard" },
+  { to: "/projects", label: "Projects", icon: FolderOpen, testId: "nav-projects" },
   { to: "/backlog", label: "Backlog", icon: ListChecks, testId: "nav-backlog" },
   { to: "/board", label: "Sprint Board", icon: Kanban, testId: "nav-board" },
   { to: "/sprints", label: "Sprints", icon: Calendar, testId: "nav-sprints" },
@@ -20,6 +22,7 @@ const navItems = [
 
 const TITLES = {
   "/": "Delivery Dashboard",
+  "/projects": "Projects",
   "/backlog": "Product Backlog",
   "/board": "Sprint Board",
   "/sprints": "Sprint Management",
@@ -29,7 +32,10 @@ const TITLES = {
 
 export default function Layout() {
   const location = useLocation();
-  const title = TITLES[location.pathname] || "SOPRA PM";
+  let title = TITLES[location.pathname] || "SOPRA PM";
+  if (location.pathname.startsWith("/projects/") && location.pathname !== "/projects") {
+    title = "Project Detail";
+  }
 
   return (
     <div className="min-h-screen flex bg-[#F8F9FA]" data-testid="app-root">
