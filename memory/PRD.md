@@ -53,6 +53,14 @@
 - Sprint Board cards now show project chip ("SCE · P1" style)
 - Seed includes 7 example projects: Sopra Cash Engine (3 phases), Sopra Commerce Revamp, HRIS SOPRA, WMS Modernization, BIMA Suite, TMS Delivery, Internal Platforms
 
+## Iteration 3 — Comments & Activity Log (2026-02)
+- `Activity` collection (kind: comment | change) with item_id, actor_id, text, field/from/to, created_at
+- `/api/backlog/{id}/activity`, POST `/comments`, DELETE `/activity/{id}` (comments only)
+- PATCH `/api/backlog/{id}?actor_id=...` auto-logs change rows for tracked fields (status, priority, dev/qa assignee, sprint, project, phase, SP, % done)
+- Cascade delete: removing an item also removes its activity rows
+- `UserPicker` in header — "Acting as" persists to localStorage; comment/change rows attribute to the chosen team member
+- `ActivityPanel` in the item edit dialog with All/Comments/History filter pills, composer, timeline showing old→new change badges, comment delete
+
 ## Backlog (P0/P1/P2)
 - P1 — Auth (JWT or Emergent Google) once team starts using in production
 - P1 — Burndown chart per sprint (daily snapshot of remaining SP)
