@@ -1,0 +1,123 @@
+{
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "typography": {
+    "headings": {
+      "family": "Chivo",
+      "weights": ["400", "700", "900"],
+      "classes": "font-sans tracking-tight text-slate-900"
+    },
+    "body": {
+      "family": "IBM Plex Sans",
+      "weights": ["400", "500", "600"],
+      "classes": "font-sans text-slate-700 leading-relaxed"
+    },
+    "mono": {
+      "family": "IBM Plex Mono",
+      "weights": ["400", "500"],
+      "classes": "font-mono tracking-tight"
+    },
+    "hierarchy_rules": [
+      "H1 (Dashboard Titles): text-4xl font-black tracking-tighter text-slate-900",
+      "H2 (Section/Card Headers): text-xl font-bold tracking-tight text-slate-900",
+      "H3 (Subsections): text-xs font-bold uppercase tracking-widest text-slate-500",
+      "Body: text-sm",
+      "Small Data/Labels: text-xs"
+    ]
+  },
+  "colors": {
+    "background": {
+      "app": "#F8F9FA",
+      "surface": "#FFFFFF",
+      "surface_hover": "#F1F3F5",
+      "surface_active": "#E9ECEF"
+    },
+    "text": {
+      "primary": "#111827",
+      "secondary": "#4B5563",
+      "tertiary": "#9CA3AF",
+      "on_brand": "#FFFFFF"
+    },
+    "border": {
+      "default": "#E5E7EB",
+      "focus": "#0033CC"
+    },
+    "brand": {
+      "primary": "#0033CC",
+      "primary_hover": "#0028A3"
+    },
+    "status": {
+      "p1_critical": "#DC2626",
+      "p2_high": "#D97706",
+      "p3_medium": "#2563EB",
+      "p4_low": "#6B7280",
+      "success_done": "#059669",
+      "in_progress": "#0033CC",
+      "in_review": "#7C3AED",
+      "backlog": "#4B5563"
+    },
+    "systems": {
+      "WMS": { "bg": "#E0F2FE", "text": "#0369A1" },
+      "Ecommerce": { "bg": "#FEF08A", "text": "#854D0E" },
+      "HRIS": { "bg": "#D1FAE5", "text": "#047857" },
+      "BIMA": { "bg": "#FCE7F3", "text": "#BE185D" },
+      "Nexora": { "bg": "#E0E7FF", "text": "#4338CA" },
+      "Internal": { "bg": "#F3F4F6", "text": "#374151" },
+      "Security": { "bg": "#FEE2E2", "text": "#B91C1C" }
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "The 'Control Room' grid protocol. High density, data correlation, sharp functional spacing.",
+    "container_padding": "p-6",
+    "gap_strategy": "Tight (gap-4 or gap-6) for data grids.",
+    "borders": "Sharp edges, max 4px border-radius (rounded-sm) for all cards and interactive elements.",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 or 12-column subgrid.",
+    "alignment": "Left-align dense data, metrics, and labels. Center align only empty states or distinct CTAs."
+  },
+  "components": {
+    "shadcn_overrides": {
+      "Card": "Remove default shadow. Use flat background, 1px solid border-slate-200. rounded-sm.",
+      "Button": "Square or rounded-sm corners. High contrast. Primary uses Brand #0033CC.",
+      "Badge": "Sharp corners (rounded-sm), flat colors. Use for Priority and Systems.",
+      "Table": "Dense. padding-y 2 or 3. 1px bottom border. Hover state on rows: bg-slate-50.",
+      "Tabs": "Underline style preferred over pill style to save space and look technical.",
+      "Select/Dropdown": "Square edges, crisp borders."
+    },
+    "custom_patterns": {
+      "kanban_board": "Columns should have a light gray background (#F8F9FA). Cards are white, flat, 1px border. Drag indicator is a subtle grip icon (Phosphor).",
+      "team_workload_bar": "Stacked or inline progress bar inside a table cell. Use status colors.",
+      "kpi_cards": "Top line metric should be massive (text-3xl) using Chivo, label in text-xs uppercase mono.",
+      "filter_chips": "Small interactive badges representing active filters, rounded-sm, removable via 'x' icon."
+    }
+  },
+  "motion_and_interaction": {
+    "hover_states": "Crisp color shifts. Tables rows shift to #F1F3F5. Buttons slightly darken.",
+    "transitions": "Fast. 150ms ease-in-out. Do not over-animate data panels.",
+    "focus_states": "ring-2 ring-offset-2 ring-brand-primary. Essential for accessibility."
+  },
+  "icons_and_assets": {
+    "icon_library": "@phosphor-icons/react",
+    "icon_style": "Regular or Duotone weight. Clean, technical.",
+    "images": {
+      "login_background": {
+        "url": "https://images.unsplash.com/photo-1771936620743-7b360e109fff",
+        "description": "Grid pattern window in a dark room - Use as a subtle, structural background for the login page to establish the 'architectural/structured' theme of the PM app."
+      }
+    }
+  },
+  "accessibility_and_testing": {
+    "contrast": "All text must pass APCA and WCAG AA standards. Ensure P2 (Amber) text on white uses a darker shade if necessary, or use as background with black text.",
+    "testing_attributes": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case, role-based (e.g., data-testid='sprint-board-p1-card')."
+  },
+  "instructions_to_main_agent": [
+    "Use Phosphor Icons for all UI icons. It fits the 'Swiss' technical vibe perfectly.",
+    "Stick rigidly to the Light theme with the Swiss & High-Contrast archetype. Do not add soft shadows or glassmorphism to data cards.",
+    "Install and use Recharts for Sprint velocity and productivity charts.",
+    "For the Kanban sprint board, use @hello-pangea/dnd (or similar modern DnD library) and ensure columns are vertically scrollable while the page header stays fixed.",
+    "The UI must feel like a strict, professional IT 'Control Room'. Function over decoration.",
+    "Ensure the priority badges (P1, P2, etc.) use the defined status colors strictly.",
+    "Build the front end using React + Vite + Tailwind CSS + Shadcn UI.",
+    "ALL files should be .js or .jsx (not .tsx) as requested.",
+    "Ensure all components (especially custom ones) use the `data-testid` attribute extensively."
+  ]
+}
