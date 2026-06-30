@@ -1,0 +1,36 @@
+{
+  "summary": "End-to-end test of SOPRA PM MVP. Backend pytest: 20/20 passed. Frontend: all pages load, data renders correctly (228 SP, 36 backlog rows, 19 sprints, 13 members, 4 board columns with cards). Search/filter, row-menu status change, and CRUD dialogs all verified working with backend persistence. Drag-and-drop on Sprint Board not verifiable via Playwright (known @hello-pangea/dnd limitation with synthetic mouse events) but underlying PATCH /api/backlog API works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Team page", "issues": ["Some members show >100% utilization (e.g. Abhi 161.5%, Nathan 175%) due to seeded SP exceeding capacity_sp. This is functionally correct (over-allocated highlighted) but PM may want to review seed capacities."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sopra_pm.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Drag-and-drop on Sprint Board could not be E2E-tested with Playwright mouse simulation (the card stayed in source column). Persistence via PATCH /api/backlog/{id} is verified independently. Recommend manual smoke test of DnD in browser, or add keyboard-DnD test if @hello-pangea/dnd keyboard mode is enabled."
+  ],
+  "critical_code_review_comments": [
+    "server.py uses deprecated @app.on_event('startup'/'shutdown'); migrate to FastAPI lifespan context for forward compatibility.",
+    "BacklogItemUpdate.actual_date set to None is filtered out by `{k: v for k, v in ... if v is not None}` in update_backlog/update_team/update_sprint - cannot clear a field once set (had to use percent_done as a forced field). Consider distinguishing 'unset' vs 'null' or accept explicit null clears.",
+    "auto_seed in startup calls seed_data(reset=False) which is fine for empty DB, but seed_data also returns BacklogItem with actual_date hardcoded to '2026-07-15' when status==Done; not parameterised."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sopra_pm.py (created)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "Auto-seed populated on first startup: 13 team members, 19 sprints, 36 backlog items (verified). Tests also create/delete TEST_-prefixed records and clean up after themselves.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests at /app/backend/tests/test_sopra_pm.py cover health, seed counts, full CRUD for team/sprints/backlog, status->Done auto-sync (percent_done=100, actual_date set), filter combinations, and all 4 dashboard endpoints. All 20 tests pass via REACT_APP_BACKEND_URL. Frontend verified for all 6 pages, navigation, row-menu status change persistence, and CRUD dialog openings. The one remaining gap is automated drag-drop persistence on /board: @hello-pangea/dnd does not respond to Playwright's synthetic mouse events even with multi-step moves and proper lift delays - test manually or look for an alternative DnD test approach. Underlying API PATCH for status change is fully verified.",
+  "rca of the issue": "N/A - no critical bugs found."
+}
