@@ -35,6 +35,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import ActivityPanel from "@/components/ActivityPanel";
+import { getActorId } from "@/lib/currentUser";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -214,7 +216,7 @@ export default function Backlog() {
         qa_assignee_id: form.qa_assignee_id || null,
       };
       if (editing) {
-        await updateBacklogItem(editing.id, payload);
+        await updateBacklogItem(editing.id, payload, getActorId() || undefined);
         toast.success("Item updated");
       } else {
         await createBacklogItem(payload);
@@ -235,7 +237,7 @@ export default function Backlog() {
   };
 
   const updateStatus = async (item, status) => {
-    await updateBacklogItem(item.id, { status });
+    await updateBacklogItem(item.id, { status }, getActorId() || undefined);
     toast.success(`Moved to ${status}`);
     loadAll();
   };
@@ -742,6 +744,15 @@ export default function Backlog() {
               />
             </div>
           </div>
+
+          {editing && (
+            <ActivityPanel
+              itemId={editing.id}
+              teamMap={teamMap}
+              sprintMap={sprintMap}
+              projectMap={projectMap}
+            />
+          )}
 
           <DialogFooter className="gap-2">
             <Button

@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { PriorityBadge, SystemBadge, StatusBadge } from "@/components/Badges";
 import { STATUSES } from "@/lib/constants";
+import { getActorId } from "@/lib/currentUser";
 import {
   Select,
   SelectContent,
@@ -62,7 +63,7 @@ export default function ProjectDetail() {
   }, [items]);
 
   const changeStatus = async (itemId, status) => {
-    await updateBacklogItem(itemId, { status });
+    await updateBacklogItem(itemId, { status }, getActorId() || undefined);
     toast.success(`Moved to ${status}`);
     load();
   };

@@ -27,13 +27,23 @@ export const updateSprint = (id, data) =>
 export const deleteSprint = (id) =>
   client.delete(`/sprints/${id}`).then((r) => r.data);
 
+// Activity / Comments
+export const fetchActivity = (itemId) =>
+  client.get(`/backlog/${itemId}/activity`).then((r) => r.data);
+export const createComment = (itemId, data) =>
+  client.post(`/backlog/${itemId}/comments`, data).then((r) => r.data);
+export const deleteActivity = (activityId) =>
+  client.delete(`/activity/${activityId}`).then((r) => r.data);
+
 // Backlog
 export const fetchBacklog = (params = {}) =>
   client.get("/backlog", { params }).then((r) => r.data);
 export const createBacklogItem = (data) =>
   client.post("/backlog", data).then((r) => r.data);
-export const updateBacklogItem = (id, data) =>
-  client.patch(`/backlog/${id}`, data).then((r) => r.data);
+export const updateBacklogItem = (id, data, actorId) =>
+  client
+    .patch(`/backlog/${id}`, data, { params: actorId ? { actor_id: actorId } : {} })
+    .then((r) => r.data);
 export const deleteBacklogItem = (id) =>
   client.delete(`/backlog/${id}`).then((r) => r.data);
 

@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 3 (Comments + Activity Log) fully verified. Backend: 46/46 pytest pass — 12 new tests in test_activity.py cover comment CRUD, empty/missing-item errors, newest-first sort, multi-field change auto-logging, no-op PATCH not logging, guest (null actor) logging, comment-only deletion, change-row deletion 404, and cascade-delete on backlog removal. All 34 previous tests (test_sopra_pm + test_projects) still pass. Frontend: UserPicker persists actor in localStorage (sopra_pm_actor_id), edit dialog shows ActivityPanel with All/Comments/History filter pills, composer is disabled when empty (Ctrl/Cmd+Enter & Send button both work), comments appear immediately and persist across reload, status change from the dialog auto-creates a 'change' Activity row visible on re-open ('Nathan updated Status, Backlog → In Review' with avatar), filters correctly hide other kinds, and comment delete works with confirm dialog.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_activity.py",
+    "/app/backend/tests/test_sopra_pm.py",
+    "/app/backend/tests/test_projects.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py grew to ~918 lines — still over the 700-line target. Strongly recommend splitting routers (projects, backlog, activity, dashboard) and seed data into modules in iteration 4.",
+    "Activity.from_value/to_value are stored as str(...). Numeric fields (story_points, percent_done) end up as strings like '0' / '40'. Fine for display but consumers comparing values must coerce. Consider storing the raw value or both.",
+    "delete_activity hard-filters on kind='comment'. Good — protects change-rows. But returns 404 (not 403/409) when the row exists but is a change kind. Acceptable since the UI never offers the action.",
+    "Auto-log triggers on any patched field whose value differs, including 'status'->'Done' which also auto-sets percent_done=100 and actual_date. percent_done change is logged (good), but actual_date is NOT in the tracked list (intentional). Worth documenting.",
+    "BacklogItemUpdate filters None values so a field can never be explicitly cleared via PATCH (e.g. unassigning a dev). Carry-over from previous iterations.",
+    "No index on activity.item_id — fine for a small dataset but should be added if data grows."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_activity.py (created — 12 tests: TestComments x4, TestActivityFeed x1, TestAutoLogChanges x4, TestDeleteActivity x2, TestCascadeOnDelete x1)"
+  ],
+  "success_rate": {"backend": "100% (46/46)", "frontend": "100%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "No new seed required. Test fixtures create TEST-prefixed throwaway items and clean them up. Backend was already auto-seeded by previous iteration (7 projects, 13 team, 19 sprints, 36 backlog items).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run all backend tests together: `pytest /app/backend/tests/ -v --junitxml=/app/test_reports/pytest/pytest_results.xml` — 46 pass in ~2.5s. Activity testids: activity-panel, comment-composer, comment-input, comment-submit, activity-filter-{all|comment|change}, activity-{id}, activity-delete-{id}. UserPicker testids: user-picker, user-picker-guest, user-picker-{teamId}. To open backlog edit dialog use `[data-testid=\"edit-{WB-REF}\"]` (e.g. edit-WB-19). The status field is `form-status` (combobox role inside item-dialog). Drag-drop on Sprint Board still cannot be reliably automated via Playwright but the underlying updateBacklogItem(id, data, actorId) path is exercised by backend tests (test_status_change_logged proves PATCH with actor_id query param writes change rows).",
+  "rca of the issue": "N/A - no bugs found this iteration."
+}

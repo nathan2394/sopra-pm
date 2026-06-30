@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import UserPicker from "@/components/UserPicker";
 import {
   ChartLine,
   Kanban,
@@ -114,16 +115,19 @@ export default function Layout() {
               {title}
             </h1>
           </div>
-          <div className="text-right">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-              Today
-            </div>
-            <div className="text-sm font-semibold text-slate-900 font-mono">
-              {new Date().toLocaleDateString("en-GB", {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-              })}
+          <div className="flex items-center gap-4">
+            <UserPicker />
+            <div className="text-right">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                Today
+              </div>
+              <div className="text-sm font-semibold text-slate-900 font-mono">
+                {new Date().toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </div>
             </div>
           </div>
         </header>

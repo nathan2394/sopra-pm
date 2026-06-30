@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { STATUSES } from "@/lib/constants";
 import { PriorityBadge, SystemBadge } from "@/components/Badges";
+import { getActorId } from "@/lib/currentUser";
 import {
   Select,
   SelectContent,
@@ -86,7 +87,7 @@ export default function SprintBoard() {
       prev.map((i) => (i.id === draggableId ? { ...i, status: newStatus } : i)),
     );
     try {
-      await updateBacklogItem(draggableId, { status: newStatus });
+      await updateBacklogItem(draggableId, { status: newStatus }, getActorId() || undefined);
       toast.success(`Moved to ${newStatus}`);
     } catch (e) {
       toast.error("Move failed");

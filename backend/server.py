@@ -194,6 +194,24 @@ class ProjectUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class Activity(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    item_id: str
+    kind: str  # "comment" | "change"
+    actor_id: Optional[str] = None  # team member id
+    text: Optional[str] = None
+    field: Optional[str] = None
+    from_value: Optional[str] = None
+    to_value: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+
+class CommentCreate(BaseModel):
+    text: str
+    actor_id: Optional[str] = None
+
+
 # ====================== Team Members ======================
 @api_router.get("/team", response_model=List[TeamMember])
 async def list_team():
@@ -429,7 +447,12 @@ async def get_backlog(item_id: str):
 
 
 @api_router.patch("/backlog/{item_id}", response_model=BacklogItem)
-async def update_backlog(item_id: str, data: BacklogItemUpdate):
+async def update_backlog(item_id: str, data: BacklogItemUpdate, actor_id: Optional[str] = None):
+    # Snapshot before update for activity log diff
+    before = await db.backlog.find_one({"id": item_id}, {"_id": 0})
+    if not before:
+        raise HTTPException(status_code=404, detail="Item not found")
+
     update = {k: v for k, v in data.model_dump().items() if v is not None}
     update["updated_at"] = now_iso()
     # Auto sync percent_done when status changes to Done
@@ -442,6 +465,34 @@ async def update_backlog(item_id: str, data: BacklogItemUpdate):
     )
     if not result:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    # Auto-log changes for tracked fields
+    tracked = {
+        "status": "Status",
+        "priority": "Priority",
+        "dev_assignee_id": "Dev assignee",
+        "qa_assignee_id": "QA assignee",
+        "sprint_id": "Sprint",
+        "project_id": "Project",
+        "phase": "Phase",
+        "story_points": "Story points",
+        "percent_done": "% done",
+    }
+    activity_logs = []
+    for field, label in tracked.items():
+        if field in update and before.get(field) != update[field]:
+            activity_logs.append(Activity(
+                item_id=item_id,
+                kind="change",
+                actor_id=actor_id,
+                field=field,
+                from_value=str(before.get(field) or "—"),
+                to_value=str(update[field] or "—"),
+                text=f"{label} changed",
+            ).model_dump())
+    if activity_logs:
+        await db.activity.insert_many(activity_logs)
+
     return BacklogItem(**result)
 
 
@@ -450,6 +501,43 @@ async def delete_backlog(item_id: str):
     result = await db.backlog.delete_one({"id": item_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
+    # Cascade delete activity for the item
+    await db.activity.delete_many({"item_id": item_id})
+    return {"ok": True}
+
+
+# ====================== Activity / Comments ======================
+@api_router.get("/backlog/{item_id}/activity", response_model=List[Activity])
+async def list_activity(item_id: str):
+    docs = await db.activity.find({"item_id": item_id}, {"_id": 0}).to_list(5000)
+    docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    return [Activity(**d) for d in docs]
+
+
+@api_router.post("/backlog/{item_id}/comments", response_model=Activity)
+async def create_comment(item_id: str, data: CommentCreate):
+    # Verify item exists
+    item = await db.backlog.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    text = (data.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Comment text required")
+    activity = Activity(
+        item_id=item_id,
+        kind="comment",
+        actor_id=data.actor_id,
+        text=text,
+    )
+    await db.activity.insert_one(activity.model_dump())
+    return activity
+
+
+@api_router.delete("/activity/{activity_id}")
+async def delete_activity(activity_id: str):
+    result = await db.activity.delete_one({"id": activity_id, "kind": "comment"})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Comment not found")
     return {"ok": True}
 
 
