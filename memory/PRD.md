@@ -40,6 +40,19 @@
 - Roadmap page: quarter summary + timeline of sprints and items
 - Status badges, priority badges, system badges with consistent design tokens
 
+## Iteration 2 — Project Grouping (2026-02)
+- Project entity (name, code, description, system, owner, color, status) with full CRUD
+- `project_id` + `phase` fields on backlog items
+- `/api/projects/{id}/summary` returns phase-level breakdown with completion %
+- Projects page (/projects): grid with phases/items/SP per project
+- Project Detail page (/projects/:id): header + phase progress strip + items grouped by phase with inline status changer
+- Backlog grouped-by-project view (default) with collapsible projects, per-phase headers, and quick-add per phase
+- Grouped/Flat toggle on backlog
+- Project + phase fields in the item create/edit dialog
+- "All projects" filter on backlog including "— No project —" bucket
+- Sprint Board cards now show project chip ("SCE · P1" style)
+- Seed includes 7 example projects: Sopra Cash Engine (3 phases), Sopra Commerce Revamp, HRIS SOPRA, WMS Modernization, BIMA Suite, TMS Delivery, Internal Platforms
+
 ## Backlog (P0/P1/P2)
 - P1 — Auth (JWT or Emergent Google) once team starts using in production
 - P1 — Burndown chart per sprint (daily snapshot of remaining SP)
