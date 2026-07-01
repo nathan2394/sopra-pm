@@ -61,6 +61,15 @@
 - `UserPicker` in header — "Acting as" persists to localStorage; comment/change rows attribute to the chosen team member
 - `ActivityPanel` in the item edit dialog with All/Comments/History filter pills, composer, timeline showing old→new change badges, comment delete
 
+## Iteration 4 — MongoDB → SQL Server Migration (2026-02)
+- **Database**: Microsoft SQL Server 2022 at sopra-db.sopra.services:51433/SOPRA_PM
+- **Driver**: pymssql (sync, wrapped with asyncio.to_thread)
+- **Schema**: PascalCase tables (`TeamMembers`, `Sprints`, `Projects`, `BacklogItems`, `Activity`) — INT IDENTITY PKs, FKs with ON DELETE SET NULL for Projects, ON DELETE CASCADE for Activity, indexes on hot columns, UpdatedAt trigger on BacklogItems
+- **Files**: `/app/database/schema.sql` (DDL), `/app/backend/db.py` (async wrappers), `/app/backend/server.py` (rewritten), `/app/backend/seed.py` (idempotent, --reset supported)
+- **API surface**: unchanged — all endpoints keep the same paths, request/response shapes; only IDs changed from UUID strings to integers
+- All previous features (Projects, Phases, Comments, Activity Log) fully working on SQL Server
+- Motor / PyMongo removed from requirements.txt
+
 ## Backlog (P0/P1/P2)
 - P1 — Auth (JWT or Emergent Google) once team starts using in production
 - P1 — Burndown chart per sprint (daily snapshot of remaining SP)
