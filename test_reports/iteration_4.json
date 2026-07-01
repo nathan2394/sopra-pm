@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 4: full end-to-end validation of SOPRA PM after MongoDB → MSSQL 2022 migration. Backend (22 pytest cases) all green; frontend integration flows verified (UserPicker → numeric actor_id, comment POST, backlog PATCH with actor_id query param, status change persisted, activity auto-log). Old Mongo test files deleted and rewritten for SQL Server.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/backlog/{id}/comments", "issue": "Frontend sends actor_id as JSON string \"1\" in body instead of int; backend accepts due to Pydantic coercion but request payload is inconsistent with PATCH (?actor_id=1 numeric). Not breaking."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard charts (Recharts)", "issues": ["Repeated console warnings 'The width(-1) and height(-1) of chart should be greater than 0' during initial mount / navigation. Cosmetic only — charts render fine after settle."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sopra_pm_mssql.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(optional) coerce actor_id to int in frontend body payload before POST /api/backlog/{id}/comments to keep the wire type consistent with the PATCH query param.",
+    "(optional) suppress Recharts width/height warnings by giving ResponsiveContainer a fixed minHeight or aspect."
+  ],
+  "critical_code_review_comments": [
+    "db.py:_insert_returning_id_sync — combines INSERT and SELECT SCOPE_IDENTITY() in one execute; works with pymssql multi-recordset handling, but calling nextset() first before fetchone() would be more idiomatic. Currently OK because pymssql fetchone on the SELECT recordset returns the Id row.",
+    "server.py TeamMember PATCH endpoint quietly returns the current row if no fields were provided (fields list empty) and does NOT raise 404 even if member_id doesn't exist (it re-queries and returns 404 only then). Fine — but the empty-body PATCH is a silent no-op.",
+    "server.py TRACKED_FIELDS logs actor_id even if actor_id is None (Guest picker default) — Activity rows get NULL ActorId, which is fine per schema but produces 'unknown user' entries in UI.",
+    "csv_join('Nexora,Internal') style commas inside area names would break splitting. Areas are constrained to a known set so this is acceptable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sopra_pm_mssql.py (new)",
+    "deleted: /app/backend/tests/test_sopra_pm.py, /app/backend/tests/test_projects.py, /app/backend/tests/test_activity.py (were Mongo/UUID)"
+  ],
+  "success_rate": {"backend": "100% (22/22 pytest cases)", "frontend": "100% for all critical flows tested"},
+  "test_credentials": "N/A — app has no auth, uses UserPicker (localStorage key `sopra_pm_actor_id`) to set actor_id for audit trail.",
+  "seed_data_creation": "Tests create WB-TESTDEL / WB-TESTCASCADE / TEST_ProjDelete throwaway rows and clean them up. Only touch on the 36 seeded backlog items is one temporary status flip that is reverted (test_backlog_patch_logs_activity_and_status_done_sets_percent). No permanent mutations to production data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "MSSQL migration is stable. All 22 backend pytest cases pass in ~170s (network to sopra-db.sopra.services:51433 is the bottleneck — each pymssql connection is single-use, no pool). Frontend routes: /, /projects, /backlog, /sprint-board, /sprints, /roadmap, /team. Nav testids: nav-dashboard, nav-projects, nav-backlog, nav-board, nav-sprints, nav-roadmap, nav-team. UserPicker testid=user-picker with menuitems by member name. Edit dialog testids: form-* (fields), form-save, form-cancel, activity-panel, comment-composer, comment-input, comment-submit, activity-filter-{all,comment,change}. actor_id stored under localStorage key 'sopra_pm_actor_id' as numeric string. Backend expected constants verified: total_sp=228, done_sp=16, completion_pct=7.0, 36 backlog items, 7 projects, 4 quarters, sprint velocity rows == sprint count (LEFT JOIN).",
+  "rca of the issue": "None — no bugs found. Migration is functionally complete: DDL clean, seed idempotent, IDs are int-identity, FKs enforce ON DELETE SET NULL for Projects and ON DELETE CASCADE for Activity, tracked-field diff logging works via actor_id query param, UserPicker persists numeric actor id to localStorage and dispatches actor-changed event to sync components."
+}
