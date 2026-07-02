@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
 from db import (
@@ -26,6 +26,10 @@ from db import (
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+# auth.py reads JWT_SECRET from os.environ at import time, so it must be
+# imported only after load_dotenv() has populated the environment.
+import auth  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -33,7 +37,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SOPRA PM API", version="2.0-mssql")
-api_router = APIRouter(prefix="/api")
+
+# /api/auth/* and /api/, /api/health stay open (reachable without a token).
+# Every other /api/* route requires a valid bearer token.
+public_router = APIRouter(prefix="/api")
+auth_router = APIRouter(prefix="/api/auth")
+api_router = APIRouter(prefix="/api", dependencies=[Depends(auth.get_current_user)])
 
 
 # =====================================================================
@@ -54,6 +63,17 @@ class TeamMember(BaseModel):
     capacity_sp: int = 20
     avatar_color: Optional[str] = None
     created_at: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: TeamMember
 
 
 class TeamMemberCreate(BaseModel):
@@ -158,6 +178,8 @@ class BacklogItem(BaseModel):
     sprint_id: Optional[int] = None
     dev_assignee_id: Optional[int] = None
     qa_assignee_id: Optional[int] = None
+    uiux_assignee_id: Optional[int] = None
+    data_eng_assignee_id: Optional[int] = None
     story_points: int = 0
     target_date: Optional[str] = None
     actual_date: Optional[str] = None
@@ -179,6 +201,8 @@ class BacklogItemCreate(BaseModel):
     sprint_id: Optional[int] = None
     dev_assignee_id: Optional[int] = None
     qa_assignee_id: Optional[int] = None
+    uiux_assignee_id: Optional[int] = None
+    data_eng_assignee_id: Optional[int] = None
     story_points: int = 0
     target_date: Optional[str] = None
     actual_date: Optional[str] = None
@@ -198,6 +222,8 @@ class BacklogItemUpdate(BaseModel):
     sprint_id: Optional[int] = None
     dev_assignee_id: Optional[int] = None
     qa_assignee_id: Optional[int] = None
+    uiux_assignee_id: Optional[int] = None
+    data_eng_assignee_id: Optional[int] = None
     story_points: Optional[int] = None
     target_date: Optional[str] = None
     actual_date: Optional[str] = None
@@ -283,6 +309,8 @@ def row_to_backlog(r: dict) -> BacklogItem:
         sprint_id=r.get("SprintId"),
         dev_assignee_id=r.get("DevAssigneeId"),
         qa_assignee_id=r.get("QaAssigneeId"),
+        uiux_assignee_id=r.get("UiuxAssigneeId"),
+        data_eng_assignee_id=r.get("DataEngAssigneeId"),
         story_points=r.get("StoryPoints", 0),
         target_date=iso(r.get("TargetDate")),
         actual_date=iso(r.get("ActualDate")),
@@ -556,6 +584,8 @@ TRACKED_FIELDS = [
     ("priority", "Priority"),
     ("dev_assignee_id", "Dev assignee"),
     ("qa_assignee_id", "QA assignee"),
+    ("uiux_assignee_id", "UI/UX assignee"),
+    ("data_eng_assignee_id", "Data Engineer assignee"),
     ("sprint_id", "Sprint"),
     ("project_id", "Project"),
     ("phase", "Phase"),
@@ -574,6 +604,8 @@ BACKLOG_UPDATE_COLS = {
     "sprint_id": "SprintId",
     "dev_assignee_id": "DevAssigneeId",
     "qa_assignee_id": "QaAssigneeId",
+    "uiux_assignee_id": "UiuxAssigneeId",
+    "data_eng_assignee_id": "DataEngAssigneeId",
     "story_points": "StoryPoints",
     "target_date": "TargetDate",
     "actual_date": "ActualDate",
@@ -589,6 +621,8 @@ TRACKED_FIELD_COL = {
     "priority": "Priority",
     "dev_assignee_id": "DevAssigneeId",
     "qa_assignee_id": "QaAssigneeId",
+    "uiux_assignee_id": "UiuxAssigneeId",
+    "data_eng_assignee_id": "DataEngAssigneeId",
     "sprint_id": "SprintId",
     "project_id": "ProjectId",
     "phase": "Phase",
@@ -605,6 +639,9 @@ async def list_backlog(
     sprint_id: Optional[int] = None,
     status: Optional[str] = None,
     dev_assignee_id: Optional[int] = None,
+    qa_assignee_id: Optional[int] = None,
+    uiux_assignee_id: Optional[int] = None,
+    data_eng_assignee_id: Optional[int] = None,
     project_id: Optional[int] = None,
     phase: Optional[str] = None,
 ):
@@ -627,6 +664,15 @@ async def list_backlog(
     if dev_assignee_id is not None:
         where.append("DevAssigneeId=%s")
         params.append(dev_assignee_id)
+    if qa_assignee_id is not None:
+        where.append("QaAssigneeId=%s")
+        params.append(qa_assignee_id)
+    if uiux_assignee_id is not None:
+        where.append("UiuxAssigneeId=%s")
+        params.append(uiux_assignee_id)
+    if data_eng_assignee_id is not None:
+        where.append("DataEngAssigneeId=%s")
+        params.append(data_eng_assignee_id)
     if project_id is not None:
         where.append("ProjectId=%s")
         params.append(project_id)
@@ -647,12 +693,13 @@ async def create_backlog(data: BacklogItemCreate):
     new_id = await insert_returning_id(
         """INSERT INTO dbo.BacklogItems
            (WbRef, Title, [System], Priority, Quarter, ProjectId, Phase, SprintId,
-            DevAssigneeId, QaAssigneeId, StoryPoints, TargetDate, ActualDate,
-            PercentDone, [Status], Notes)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            DevAssigneeId, QaAssigneeId, UiuxAssigneeId, DataEngAssigneeId,
+            StoryPoints, TargetDate, ActualDate, PercentDone, [Status], Notes)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (data.wb_ref, data.title, data.system, data.priority, data.quarter,
          data.project_id, data.phase, data.sprint_id, data.dev_assignee_id,
-         data.qa_assignee_id, data.story_points, data.target_date,
+         data.qa_assignee_id, data.uiux_assignee_id, data.data_eng_assignee_id,
+         data.story_points, data.target_date,
          data.actual_date, data.percent_done, data.status, data.notes),
     )
     row = await fetch_one("SELECT * FROM dbo.BacklogItems WHERE Id=%s", (new_id,))
@@ -946,14 +993,14 @@ async def dashboard_team_workload():
 
 
 # =====================================================================
-# Root
+# Root / health (public — no auth required)
 # =====================================================================
-@api_router.get("/")
+@public_router.get("/")
 async def root():
     return {"message": "SOPRA PM API", "version": app.version}
 
 
-@api_router.get("/health")
+@public_router.get("/health")
 async def health():
     try:
         v = await ping()
@@ -962,6 +1009,27 @@ async def health():
         return {"ok": False, "error": str(e)}
 
 
+# =====================================================================
+# Auth
+# =====================================================================
+@auth_router.post("/login", response_model=LoginResponse)
+async def login(data: LoginRequest):
+    row = await fetch_one(
+        "SELECT * FROM dbo.TeamMembers WHERE LOWER(Email)=LOWER(%s)", (data.email,)
+    )
+    if not row or not auth.verify_password(data.password, row.get("PasswordHash") or ""):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = auth.create_access_token(row["Id"], row.get("Email"), row.get("Role"))
+    return LoginResponse(access_token=token, user=row_to_member(row))
+
+
+@auth_router.get("/me", response_model=TeamMember)
+async def me(current: dict = Depends(auth.get_current_user)):
+    return row_to_member(current)
+
+
+app.include_router(public_router)
+app.include_router(auth_router)
 app.include_router(api_router)
 
 app.add_middleware(

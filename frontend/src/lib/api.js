@@ -3,10 +3,48 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
+const TOKEN_KEY = "sopra_pm_token";
+const USER_KEY = "sopra_pm_user";
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+export const setToken = (t) => {
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
+};
+export const clearSession = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+};
+
 const client = axios.create({
   baseURL: API,
   headers: { "Content-Type": "application/json" },
 });
+
+client.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+client.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const isLoginCall = err?.config?.url?.includes("/auth/login");
+    if (err?.response?.status === 401 && !isLoginCall) {
+      clearSession();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(err);
+  },
+);
+
+// Auth
+export const login = (email, password) =>
+  client.post("/auth/login", { email, password }).then((r) => r.data);
+export const fetchMe = () => client.get("/auth/me").then((r) => r.data);
 
 // Team
 export const fetchTeam = () => client.get("/team").then((r) => r.data);

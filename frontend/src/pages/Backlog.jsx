@@ -68,6 +68,8 @@ const emptyItem = {
   sprint_id: null,
   dev_assignee_id: null,
   qa_assignee_id: null,
+  uiux_assignee_id: null,
+  data_eng_assignee_id: null,
   story_points: 0,
   status: "Backlog",
   notes: "",
@@ -214,6 +216,8 @@ export default function Backlog() {
         phase: form.phase || null,
         dev_assignee_id: form.dev_assignee_id || null,
         qa_assignee_id: form.qa_assignee_id || null,
+        uiux_assignee_id: form.uiux_assignee_id || null,
+        data_eng_assignee_id: form.data_eng_assignee_id || null,
       };
       if (editing) {
         await updateBacklogItem(editing.id, payload, getActorId() || undefined);
@@ -706,6 +710,34 @@ export default function Backlog() {
               testId="form-qa"
             />
             <SelectField
+              label="UI/UX Assignee"
+              value={form.uiux_assignee_id || "_none"}
+              onChange={(v) =>
+                setForm({ ...form, uiux_assignee_id: v === "_none" ? null : v })
+              }
+              options={[
+                { value: "_none", label: "— Unassigned —" },
+                ...team
+                  .filter((t) => t.role === "UI/UX")
+                  .map((t) => ({ value: t.id, label: t.name })),
+              ]}
+              testId="form-uiux"
+            />
+            <SelectField
+              label="Data Engineer Assignee"
+              value={form.data_eng_assignee_id || "_none"}
+              onChange={(v) =>
+                setForm({ ...form, data_eng_assignee_id: v === "_none" ? null : v })
+              }
+              options={[
+                { value: "_none", label: "— Unassigned —" },
+                ...team
+                  .filter((t) => t.role === "Data Engineer")
+                  .map((t) => ({ value: t.id, label: t.name })),
+              ]}
+              testId="form-data-eng"
+            />
+            <SelectField
               label="Status"
               value={form.status}
               onChange={(v) => setForm({ ...form, status: v })}
@@ -802,6 +834,8 @@ function ItemsTable({
             <th className="text-left px-4 py-2.5 font-semibold">Sprint</th>
             <th className="text-left px-4 py-2.5 font-semibold">Dev</th>
             <th className="text-left px-4 py-2.5 font-semibold">QA</th>
+            <th className="text-left px-4 py-2.5 font-semibold">UI/UX</th>
+            <th className="text-left px-4 py-2.5 font-semibold">Data Eng</th>
             <th className="text-right px-4 py-2.5 font-semibold">SP</th>
             <th className="text-left px-4 py-2.5 font-semibold">Status</th>
             <th className="w-10"></th>
@@ -870,6 +904,16 @@ function ItemsTable({
               </td>
               <td className="px-4 py-2.5 text-sm text-slate-700">
                 {teamMap[i.qa_assignee_id]?.name || (
+                  <span className="text-slate-400">—</span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-700">
+                {teamMap[i.uiux_assignee_id]?.name || (
+                  <span className="text-slate-400">—</span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 text-sm text-slate-700">
+                {teamMap[i.data_eng_assignee_id]?.name || (
                   <span className="text-slate-400">—</span>
                 )}
               </td>

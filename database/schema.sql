@@ -30,6 +30,7 @@ CREATE TABLE dbo.TeamMembers (
     Name         NVARCHAR(120)   NOT NULL,
     Role         NVARCHAR(60)    NOT NULL,          -- Backend Dev, QA, Product Manager, Data Engineer, UI/UX
     Email        NVARCHAR(200)   NULL,
+    PasswordHash NVARCHAR(255)   NULL,              -- bcrypt hash; NULL = login disabled for this member
     Areas        NVARCHAR(500)   NULL,              -- comma-separated system tags
     Rules        NVARCHAR(MAX)   NULL,
     CapacitySp   INT             NOT NULL DEFAULT (20),
@@ -40,6 +41,9 @@ CREATE TABLE dbo.TeamMembers (
 GO
 
 CREATE INDEX IX_TeamMembers_Role ON dbo.TeamMembers (Role);
+GO
+
+CREATE UNIQUE INDEX UQ_TeamMembers_Email ON dbo.TeamMembers (Email) WHERE Email IS NOT NULL;
 GO
 
 
@@ -104,6 +108,8 @@ CREATE TABLE dbo.BacklogItems (
     SprintId       INT           NULL,
     DevAssigneeId  INT           NULL,
     QaAssigneeId   INT           NULL,
+    UiuxAssigneeId    INT        NULL,
+    DataEngAssigneeId INT        NULL,
     StoryPoints    INT           NOT NULL DEFAULT (0),
     TargetDate     DATE          NULL,
     ActualDate     DATE          NULL,
@@ -121,7 +127,11 @@ CREATE TABLE dbo.BacklogItems (
     CONSTRAINT FK_BacklogItems_Dev
         FOREIGN KEY (DevAssigneeId) REFERENCES dbo.TeamMembers(Id)  ON DELETE NO ACTION,
     CONSTRAINT FK_BacklogItems_Qa
-        FOREIGN KEY (QaAssigneeId)  REFERENCES dbo.TeamMembers(Id)  ON DELETE NO ACTION
+        FOREIGN KEY (QaAssigneeId)  REFERENCES dbo.TeamMembers(Id)  ON DELETE NO ACTION,
+    CONSTRAINT FK_BacklogItems_Uiux
+        FOREIGN KEY (UiuxAssigneeId)    REFERENCES dbo.TeamMembers(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_BacklogItems_DataEng
+        FOREIGN KEY (DataEngAssigneeId) REFERENCES dbo.TeamMembers(Id) ON DELETE NO ACTION
 );
 GO
 
@@ -132,6 +142,8 @@ CREATE INDEX IX_BacklogItems_Sprint    ON dbo.BacklogItems (SprintId);
 CREATE INDEX IX_BacklogItems_Project   ON dbo.BacklogItems (ProjectId);
 CREATE INDEX IX_BacklogItems_System    ON dbo.BacklogItems ([System]);
 CREATE INDEX IX_BacklogItems_DevAssign ON dbo.BacklogItems (DevAssigneeId);
+CREATE INDEX IX_BacklogItems_UiuxAssign    ON dbo.BacklogItems (UiuxAssigneeId);
+CREATE INDEX IX_BacklogItems_DataEngAssign ON dbo.BacklogItems (DataEngAssigneeId);
 GO
 
 

@@ -21,6 +21,8 @@ const FIELD_LABELS = {
   priority: "Priority",
   dev_assignee_id: "Dev assignee",
   qa_assignee_id: "QA assignee",
+  uiux_assignee_id: "UI/UX assignee",
+  data_eng_assignee_id: "Data Engineer assignee",
   sprint_id: "Sprint",
   project_id: "Project",
   phase: "Phase",
@@ -89,7 +91,12 @@ export default function ActivityPanel({ itemId, teamMap: passedTeamMap, sprintMa
 
   const formatValue = (field, value) => {
     if (value === "—" || value === "None" || value == null) return "—";
-    if (field === "dev_assignee_id" || field === "qa_assignee_id") {
+    if (
+      field === "dev_assignee_id" ||
+      field === "qa_assignee_id" ||
+      field === "uiux_assignee_id" ||
+      field === "data_eng_assignee_id"
+    ) {
       return teamMap[value]?.name || value;
     }
     if (field === "sprint_id") {
