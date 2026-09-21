@@ -22,7 +22,7 @@ const FIELD_LABELS = {
   dev_assignee_id: "Dev assignee",
   qa_assignee_id: "QA assignee",
   uiux_assignee_id: "UI/UX assignee",
-  data_eng_assignee_id: "Data Engineer assignee",
+  data_eng_assignee_id: "AI Engineer assignee",
   sprint_id: "Sprint",
   project_id: "Project",
   phase: "Phase",

@@ -38,7 +38,7 @@ export const ROLES = [
   "Backend Dev",
   "QA",
   "Product Manager",
-  "Data Engineer",
+  "AI Engineer",
   "UI/UX",
 ];
 export const SPRINT_STATUSES = ["Planned", "Active", "Completed"];

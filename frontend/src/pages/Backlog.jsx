@@ -35,7 +35,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import ActivityPanel from "@/components/ActivityPanel";
+import ItemDialog from "@/components/ItemDialog";
 import { getActorId } from "@/lib/currentUser";
 import {
   DropdownMenu,
@@ -73,6 +73,7 @@ const emptyItem = {
   story_points: 0,
   status: "Backlog",
   notes: "",
+  url: "",
 };
 
 export default function Backlog() {
@@ -194,8 +195,8 @@ export default function Backlog() {
     setEditing(null);
     setForm({
       ...emptyItem,
-      wb_ref: `WB-${String(items.length + 50).padStart(2, "0")}`,
-      ...presets,
+      // wb_ref is filled in by ItemDialog from the project's series.
+            ...presets,
     });
     setDialogOpen(true);
   };
@@ -556,255 +557,25 @@ export default function Backlog() {
       )}
 
       {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent
-          className="rounded-sm max-w-2xl max-h-[90vh] overflow-y-auto"
-          data-testid="item-dialog"
-        >
-          <DialogHeader>
-            <DialogTitle className="font-display font-black tracking-tight">
-              {editing ? `Edit ${editing.wb_ref}` : "New Backlog Item"}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                WB Ref
-              </Label>
-              <Input
-                value={form.wb_ref}
-                onChange={(e) => setForm({ ...form, wb_ref: e.target.value })}
-                className="rounded-sm font-mono"
-                data-testid="form-wb-ref"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                Story Points
-              </Label>
-              <Input
-                type="number"
-                value={form.story_points}
-                onChange={(e) =>
-                  setForm({ ...form, story_points: e.target.value })
-                }
-                className="rounded-sm font-mono"
-                data-testid="form-sp"
-              />
-            </div>
-            <div className="space-y-1.5 col-span-2">
-              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                Title
-              </Label>
-              <Input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="rounded-sm"
-                data-testid="form-title"
-              />
-            </div>
-
-            <SelectField
-              label="Project"
-              value={form.project_id || "_none"}
-              onChange={(v) =>
-                setForm({ ...form, project_id: v === "_none" ? null : v })
-              }
-              options={[
-                { value: "_none", label: "— No project —" },
-                ...projects.map((p) => ({
-                  value: p.id,
-                  label: `${p.code || ""} · ${p.name}`.trim(),
-                })),
-              ]}
-              testId="form-project"
-            />
-            <div className="space-y-1.5">
-              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                Phase (within project)
-              </Label>
-              <Input
-                value={form.phase || ""}
-                onChange={(e) => setForm({ ...form, phase: e.target.value })}
-                placeholder="e.g. Phase 1, Phase 2"
-                className="rounded-sm"
-                disabled={!form.project_id}
-                data-testid="form-phase"
-              />
-            </div>
-
-            <SelectField
-              label="System"
-              value={form.system}
-              onChange={(v) => setForm({ ...form, system: v })}
-              options={SYSTEMS.map((s) => ({ value: s, label: s }))}
-              testId="form-system"
-            />
-            <SelectField
-              label="Priority"
-              value={form.priority}
-              onChange={(v) => setForm({ ...form, priority: v })}
-              options={PRIORITIES.map((p) => ({
-                value: p,
-                label: `${p} – ${PRIORITY_COLORS[p].label}`,
-              }))}
-              testId="form-priority"
-            />
-            <SelectField
-              label="Quarter"
-              value={form.quarter}
-              onChange={(v) => setForm({ ...form, quarter: v })}
-              options={["Q3 2026", "Q4 2026", "Q1 2027", "Q2 2027"].map((q) => ({
-                value: q,
-                label: q,
-              }))}
-              testId="form-quarter"
-            />
-            <SelectField
-              label="Sprint"
-              value={form.sprint_id || "_none"}
-              onChange={(v) =>
-                setForm({ ...form, sprint_id: v === "_none" ? null : v })
-              }
-              options={[
-                { value: "_none", label: "— No sprint —" },
-                ...sprints.map((s) => ({
-                  value: s.id,
-                  label: `${s.name} · ${s.quarter}`,
-                })),
-              ]}
-              testId="form-sprint"
-            />
-            <SelectField
-              label="Dev Assignee"
-              value={form.dev_assignee_id || "_none"}
-              onChange={(v) =>
-                setForm({ ...form, dev_assignee_id: v === "_none" ? null : v })
-              }
-              options={[
-                { value: "_none", label: "— Unassigned —" },
-                ...team
-                  .filter(
-                    (t) => t.role === "Backend Dev" || t.role === "Product Manager",
-                  )
-                  .map((t) => ({
-                    value: t.id,
-                    label: `${t.name} · ${t.role}`,
-                  })),
-              ]}
-              testId="form-dev"
-            />
-            <SelectField
-              label="QA Assignee"
-              value={form.qa_assignee_id || "_none"}
-              onChange={(v) =>
-                setForm({ ...form, qa_assignee_id: v === "_none" ? null : v })
-              }
-              options={[
-                { value: "_none", label: "— Unassigned —" },
-                ...team
-                  .filter((t) => t.role === "QA")
-                  .map((t) => ({ value: t.id, label: t.name })),
-              ]}
-              testId="form-qa"
-            />
-            <SelectField
-              label="UI/UX Assignee"
-              value={form.uiux_assignee_id || "_none"}
-              onChange={(v) =>
-                setForm({ ...form, uiux_assignee_id: v === "_none" ? null : v })
-              }
-              options={[
-                { value: "_none", label: "— Unassigned —" },
-                ...team
-                  .filter((t) => t.role === "UI/UX")
-                  .map((t) => ({ value: t.id, label: t.name })),
-              ]}
-              testId="form-uiux"
-            />
-            <SelectField
-              label="Data Engineer Assignee"
-              value={form.data_eng_assignee_id || "_none"}
-              onChange={(v) =>
-                setForm({ ...form, data_eng_assignee_id: v === "_none" ? null : v })
-              }
-              options={[
-                { value: "_none", label: "— Unassigned —" },
-                ...team
-                  .filter((t) => t.role === "Data Engineer")
-                  .map((t) => ({ value: t.id, label: t.name })),
-              ]}
-              testId="form-data-eng"
-            />
-            <SelectField
-              label="Status"
-              value={form.status}
-              onChange={(v) => setForm({ ...form, status: v })}
-              options={STATUSES.map((s) => ({ value: s, label: s }))}
-              testId="form-status"
-            />
-            <div className="space-y-1.5">
-              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                % Done
-              </Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={form.percent_done || 0}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    percent_done: parseInt(e.target.value) || 0,
-                  })
-                }
-                className="rounded-sm font-mono"
-                data-testid="form-percent"
-              />
-            </div>
-            <div className="space-y-1.5 col-span-2">
-              <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                Notes / Rules
-              </Label>
-              <Textarea
-                value={form.notes || ""}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                className="rounded-sm"
-                rows={2}
-                data-testid="form-notes"
-              />
-            </div>
-          </div>
-
-          {editing && (
-            <ActivityPanel
-              itemId={editing.id}
-              teamMap={teamMap}
-              sprintMap={sprintMap}
-              projectMap={projectMap}
-            />
-          )}
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              className="rounded-sm"
-              data-testid="form-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              className="rounded-sm bg-[#0033CC] hover:bg-[#0028A3]"
-              data-testid="form-save"
-            >
-              {editing ? "Save changes" : "Create item"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ItemDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        form={form}
+        setForm={setForm}
+        editing={editing}
+        onSave={handleSave}
+        onAttachmentChanged={(updated) => {
+          setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+          setEditing(updated);
+          setForm((f) => ({ ...f, ...updated }));
+        }}
+        team={team}
+        sprints={sprints}
+        projects={projects}
+        teamMap={teamMap}
+        sprintMap={sprintMap}
+        projectMap={projectMap}
+      />
     </div>
   );
 }
@@ -835,7 +606,7 @@ function ItemsTable({
             <th className="text-left px-4 py-2.5 font-semibold">Dev</th>
             <th className="text-left px-4 py-2.5 font-semibold">QA</th>
             <th className="text-left px-4 py-2.5 font-semibold">UI/UX</th>
-            <th className="text-left px-4 py-2.5 font-semibold">Data Eng</th>
+            <th className="text-left px-4 py-2.5 font-semibold">AI Eng</th>
             <th className="text-right px-4 py-2.5 font-semibold">SP</th>
             <th className="text-left px-4 py-2.5 font-semibold">Status</th>
             <th className="w-10"></th>
@@ -981,24 +752,3 @@ function FilterSelect({ value, onChange, options, testId, width = "w-40" }) {
   );
 }
 
-function SelectField({ label, value, onChange, options, testId }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
-        {label}
-      </Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="rounded-sm" data-testid={testId}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}

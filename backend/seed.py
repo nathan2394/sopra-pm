@@ -1,9 +1,19 @@
 """Seed initial SOPRA PM data into SQL Server.
 
 Idempotent: skips insert when table has rows unless --reset is passed.
+Also provisions a login (Email + PasswordHash) for every seeded team member,
+all sharing one default password so the app is usable immediately after
+seeding. Change these before handing the system to real users — see the
+printed credentials table at the end of the run, and backend/manage_users.py
+for changing/disabling passwords afterward.
+
 Usage:
-    python /app/backend/seed.py           # seed only if empty
-    python /app/backend/seed.py --reset   # wipe and reseed
+    python seed.py                # seed only if empty
+    python seed.py --reset        # wipe and reseed
+
+Env overrides:
+    SEED_DEFAULT_PASSWORD   default password for every seeded account
+                             (default: "SopraPM@2026")
 """
 from __future__ import annotations
 
@@ -11,12 +21,14 @@ import os
 import sys
 from pathlib import Path
 
+import bcrypt
 import pymssql
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
 RESET = "--reset" in sys.argv
+DEFAULT_PASSWORD = os.environ.get("SEED_DEFAULT_PASSWORD", "SopraPM@2026")
 
 
 def conn():
@@ -33,20 +45,25 @@ def conn():
     )
 
 
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+# (name, role, email, areas, rules, capacity_sp, avatar_color)
 TEAM = [
-    ("Nathan", "Product Manager", None, "Nexora,Internal", "SAP Integration & Nexora Cash Engine ONLY", 20, "#0033CC"),
-    ("Nando", "Product Manager", None, "Internal", "Sopra CAM (shared with Nathan)", 18, "#7C3AED"),
-    ("Andre", "Backend Dev", None, "WMS,BIMA,Internal", "WMS majority, EIL Audit, BIMA", 26, "#0369A1"),
-    ("Abhi", "Backend Dev", None, "Ecommerce,HRIS", "Ecommerce general, HRIS, picks up Okhy overflow", 30, "#047857"),
-    ("Nadir", "Backend Dev", None, "Ecommerce,WMS,BIMA,Nexora,Security", "TMS primary, WMS support, BIMA, Nexora", 26, "#B91C1C"),
-    ("Okhy", "Backend Dev", None, "Ecommerce", "ONLY Revamp Ecommerce (Catalog & frontend)", 18, "#D97706"),
-    ("Ignas", "Backend Dev", None, "WMS,Ecommerce,HRIS", "ONLY Handheld devices (RFID, QR Scanner, Fingerspot)", 16, "#BE185D"),
-    ("Finta", "QA", None, "All", "QA across all projects", 24, "#4338CA"),
-    ("Michael", "QA", None, "All", "QA across all projects", 24, "#854D0E"),
-    ("Nadia", "Data Engineer", None, "Internal", "Data pipelines & analytics", 18, "#0F766E"),
-    ("Fitri", "Data Engineer", None, "Internal", "Data pipelines & analytics", 18, "#9333EA"),
-    ("Finley", "Data Engineer", None, "Internal", "Data pipelines & analytics", 18, "#0891B2"),
-    ("Mukaram", "UI/UX", None, "All", "Design for all systems", 20, "#DC2626"),
+    ("Nathan", "Product Manager", "nathan@sopra.com", "Nexora,Internal", "SAP Integration & Nexora Cash Engine ONLY", 20, "#0033CC"),
+    ("Nando", "Product Manager", "nando@sopra.com", "Internal", "Sopra CAM (shared with Nathan)", 18, "#7C3AED"),
+    ("Andre", "Backend Dev", "andre@sopra.com", "WMS,BIMA,Internal", "WMS majority, EIL Audit, BIMA", 26, "#0369A1"),
+    ("Abhi", "Backend Dev", "abhi@sopra.com", "Ecommerce,HRIS", "Ecommerce general, HRIS, picks up Okhy overflow", 30, "#047857"),
+    ("Nadir", "Backend Dev", "nadir@sopra.com", "Ecommerce,WMS,BIMA,Nexora,Security", "TMS primary, WMS support, BIMA, Nexora", 26, "#B91C1C"),
+    ("Okhy", "Backend Dev", "okhy@sopra.com", "Ecommerce", "ONLY Revamp Ecommerce (Catalog & frontend)", 18, "#D97706"),
+    ("Ignas", "Backend Dev", "ignas@sopra.com", "WMS,Ecommerce,HRIS", "ONLY Handheld devices (RFID, QR Scanner, Fingerspot)", 16, "#BE185D"),
+    ("Finta", "QA", "finta@sopra.com", "All", "QA across all projects", 24, "#4338CA"),
+    ("Michael", "QA", "michael@sopra.com", "All", "QA across all projects", 24, "#854D0E"),
+    ("Nadia", "Data Engineer", "nadia@sopra.com", "Internal", "Data pipelines & analytics", 18, "#0F766E"),
+    ("Fitri", "Data Engineer", "fitri@sopra.com", "Internal", "Data pipelines & analytics", 18, "#9333EA"),
+    ("Finley", "Data Engineer", "finley@sopra.com", "Internal", "Data pipelines & analytics", 18, "#0891B2"),
+    ("Mukaram", "UI/UX", "mukaram@sopra.com", "All", "Design for all systems", 20, "#DC2626"),
 ]
 
 PROJECTS = [
@@ -145,6 +162,19 @@ DEMO_STATUS = {
     "WB-23": ("In Review", 70, None),
 }
 
+# Extra assignees not covered by the original (dev, qa) columns.
+# wb_ref -> (uiux_assignee_name, data_eng_assignee_name)
+EXTRA_ASSIGNEES = {
+    "WB-01": (None, "Nadia"),       # KPI Dashboard - data pipeline heavy
+    "WB-02": ("Mukaram", None),     # HRIS SOPRA - employee-facing UI
+    "WB-11": ("Mukaram", None),     # Payment Gateway BCA - checkout UX
+    "WB-13": ("Mukaram", None),     # Dashboard & Notif Ecom (Mobile)
+    "WB-25": ("Mukaram", "Fitri"),  # Revamp Catalog - UI + catalog data
+    "WB-34": ("Mukaram", None),     # HRIS Employee Dashboard
+    "WB-42": (None, "Finley"),      # Search Engine Rufi's - indexing/data
+    "WB-48": ("Mukaram", None),     # Dashboard Ecom (NEW) + Support
+}
+
 
 def main():
     with conn() as c:
@@ -167,18 +197,21 @@ def main():
             print("Data already present; skipping (use --reset to wipe).")
             return
 
-        # Team
+        # Team (+ login accounts)
+        pwd_hash = hash_password(DEFAULT_PASSWORD)
         name_to_id = {}
         for row in TEAM:
+            name, role, email, areas, rules, capacity_sp, avatar_color = row
             cur.execute(
-                """INSERT INTO dbo.TeamMembers (Name, Role, Email, Areas, Rules, CapacitySp, AvatarColor)
+                """INSERT INTO dbo.TeamMembers
+                   (Name, Role, Email, PasswordHash, Areas, Rules, CapacitySp, AvatarColor)
                    OUTPUT INSERTED.Id
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                row,
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (name, role, email, pwd_hash, areas, rules, capacity_sp, avatar_color),
             )
             rid = cur.fetchone()["Id"]
-            name_to_id[row[0]] = rid
-        print(f"Inserted {len(TEAM)} team members")
+            name_to_id[name] = rid
+        print(f"Inserted {len(TEAM)} team members (all with login enabled)")
 
         # Projects
         code_to_id = {}
@@ -212,17 +245,21 @@ def main():
         for (wb, title, sys_tag, prio, quarter, sprint_num, dev, qa, sp,
              notes, proj_code, phase) in BACKLOG:
             status, pct, actual_date = DEMO_STATUS.get(wb, ("Backlog", 0, None))
+            uiux_name, data_eng_name = EXTRA_ASSIGNEES.get(wb, (None, None))
             cur.execute(
                 """INSERT INTO dbo.BacklogItems
                    (WbRef, Title, [System], Priority, Quarter, ProjectId, Phase, SprintId,
-                    DevAssigneeId, QaAssigneeId, StoryPoints, ActualDate, PercentDone, [Status], Notes)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    DevAssigneeId, QaAssigneeId, UiuxAssigneeId, DataEngAssigneeId,
+                    StoryPoints, ActualDate, PercentDone, [Status], Notes)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (wb, title, sys_tag, prio, quarter,
                  code_to_id.get(proj_code) if proj_code else None,
                  phase,
                  num_to_id.get(sprint_num),
                  name_to_id.get(dev) if dev else None,
                  name_to_id.get(qa) if qa else None,
+                 name_to_id.get(uiux_name) if uiux_name else None,
+                 name_to_id.get(data_eng_name) if data_eng_name else None,
                  sp, actual_date, pct, status, notes),
             )
             n += 1
@@ -230,6 +267,11 @@ def main():
 
         c.commit()
         print("Seed complete.")
+
+        print("\nLogin credentials (change these before real use — see manage_users.py):")
+        print(f"  Password for every account: {DEFAULT_PASSWORD}")
+        for name, role, email, *_ in TEAM:
+            print(f"    {email:<24} {name} ({role})")
 
 
 if __name__ == "__main__":

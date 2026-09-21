@@ -8,6 +8,7 @@ import {
   fetchProjects,
   updateBacklogItem,
 } from "@/lib/api";
+import ItemDialog from "@/components/ItemDialog";
 import { STATUSES } from "@/lib/constants";
 import { PriorityBadge, SystemBadge } from "@/components/Badges";
 import { getActorId } from "@/lib/currentUser";
@@ -33,6 +34,53 @@ export default function SprintBoard() {
   const [sprints, setSprints] = useState([]);
   const [projects, setProjects] = useState([]);
   const [selectedSprint, setSelectedSprint] = useState(null);
+  // Edit a card in place — no detour through the Backlog page.
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(null);
+
+  const openEdit = (item) => {
+    setEditing(item);
+    setForm({ ...item, phase: item.phase || "", url: item.url || "" });
+  };
+
+  const closeEdit = (open) => {
+    if (!open) {
+      setEditing(null);
+      setForm(null);
+    }
+  };
+
+  const applyUpdated = (updated) => {
+    setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+    setEditing(updated);
+    setForm((f) => ({ ...f, ...updated }));
+  };
+
+  const handleSave = async () => {
+    try {
+      const updated = await updateBacklogItem(
+        editing.id,
+        {
+          ...form,
+          story_points: parseInt(form.story_points) || 0,
+          percent_done: parseInt(form.percent_done) || 0,
+          sprint_id: form.sprint_id || null,
+          project_id: form.project_id || null,
+          phase: form.phase || null,
+          dev_assignee_id: form.dev_assignee_id || null,
+          qa_assignee_id: form.qa_assignee_id || null,
+          uiux_assignee_id: form.uiux_assignee_id || null,
+          data_eng_assignee_id: form.data_eng_assignee_id || null,
+        },
+        getActorId() || undefined,
+      );
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+      toast.success("Item updated");
+      closeEdit(false);
+    } catch (e) {
+      toast.error("Save failed");
+    }
+  };
 
   const load = async () => {
     const [b, t, s, p] = await Promise.all([
@@ -64,6 +112,11 @@ export default function SprintBoard() {
     [projects],
   );
 
+  const sprintMap = useMemo(
+    () => Object.fromEntries(sprints.map((s) => [s.id, s])),
+    [sprints],
+  );
+
   const sprintItems = useMemo(
     () => items.filter((i) => i.sprint_id === selectedSprint),
     [items, selectedSprint],
@@ -81,17 +134,33 @@ export default function SprintBoard() {
     if (!result.destination) return;
     const { draggableId, destination, source } = result;
     if (destination.droppableId === source.droppableId) return;
+
+    // draggableId is always a string (the library requires it); item ids are
+    // numbers, so convert back before touching state or the API.
+    const itemId = Number(draggableId);
     const newStatus = destination.droppableId;
-    // optimistic update
+    const previousStatus = source.droppableId;
+
+    // Optimistic move, so the card lands where it was dropped straight away.
     setItems((prev) =>
-      prev.map((i) => (i.id === draggableId ? { ...i, status: newStatus } : i)),
+      prev.map((i) => (i.id === itemId ? { ...i, status: newStatus } : i)),
     );
+
     try {
-      await updateBacklogItem(draggableId, { status: newStatus }, getActorId() || undefined);
+      const updated = await updateBacklogItem(
+        itemId,
+        { status: newStatus },
+        getActorId() || undefined,
+      );
+      // Moving to Done also sets percent_done and actual_date server-side, so
+      // take the server's version of the row rather than just the new status.
+      setItems((prev) => prev.map((i) => (i.id === itemId ? updated : i)));
       toast.success(`Moved to ${newStatus}`);
     } catch (e) {
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, status: previousStatus } : i)),
+      );
       toast.error("Move failed");
-      load();
     }
   };
 
@@ -103,13 +172,16 @@ export default function SprintBoard() {
           <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
             Sprint
           </div>
-          <Select value={selectedSprint || ""} onValueChange={setSelectedSprint}>
+          <Select
+            value={selectedSprint != null ? String(selectedSprint) : ""}
+            onValueChange={(v) => setSelectedSprint(Number(v))}
+          >
             <SelectTrigger className="rounded-sm h-9 w-72" data-testid="sprint-select">
               <SelectValue placeholder="Choose sprint…" />
             </SelectTrigger>
             <SelectContent>
               {sprints.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
+                <SelectItem key={s.id} value={String(s.id)}>
                   {s.name} · {s.quarter} · {s.status}
                 </SelectItem>
               ))}
@@ -182,7 +254,7 @@ export default function SprintBoard() {
                         </div>
                       )}
                       {colItems.map((item, idx) => (
-                        <Draggable draggableId={item.id} index={idx} key={item.id}>
+                        <Draggable draggableId={String(item.id)} index={idx} key={item.id}>
                           {(prov, snap) => (
                             <div
                               ref={prov.innerRef}
@@ -199,7 +271,11 @@ export default function SprintBoard() {
                                 >
                                   <DotsSixVertical size={14} weight="bold" />
                                 </div>
-                                <div className="flex-1 min-w-0">
+                                <div
+                                  className="flex-1 min-w-0 cursor-pointer"
+                                  onClick={() => openEdit(item)}
+                                  data-testid={`open-${item.wb_ref}`}
+                                >
                                   <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                     <span className="font-mono text-[10px] font-bold text-slate-500">
                                       {item.wb_ref}
@@ -265,6 +341,24 @@ export default function SprintBoard() {
           })}
         </div>
       </DragDropContext>
+
+      {form && (
+        <ItemDialog
+          open={!!editing}
+          onOpenChange={closeEdit}
+          form={form}
+          setForm={setForm}
+          editing={editing}
+          onSave={handleSave}
+          onAttachmentChanged={applyUpdated}
+          team={team}
+          sprints={sprints}
+          projects={projects}
+          teamMap={teamMap}
+          sprintMap={sprintMap}
+          projectMap={projectMap}
+        />
+      )}
     </div>
   );
 }

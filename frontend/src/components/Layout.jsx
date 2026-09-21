@@ -39,13 +39,13 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F8F9FA]" data-testid="app-root">
+    <div className="h-screen overflow-hidden flex bg-[#F8F9FA]" data-testid="app-root">
       {/* Sidebar */}
       <aside
-        className="w-60 border-r border-slate-200 bg-white flex flex-col"
+        className="w-60 shrink-0 h-screen border-r border-slate-200 bg-white flex flex-col"
         data-testid="sidebar"
       >
-        <div className="p-5 border-b border-slate-200">
+        <div className="p-5 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-sm bg-[#0033CC] flex items-center justify-center">
               <Lightning size={18} weight="fill" color="white" />
@@ -61,7 +61,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1 scrollbar-thin">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -85,7 +85,10 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="p-4 border-t border-slate-200">
+        <div
+          className="p-4 border-t border-slate-200 shrink-0"
+          data-testid="active-cycle"
+        >
           <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
             Active Cycle
           </div>
@@ -99,9 +102,9 @@ export default function Layout() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0">
         <header
-          className="border-b border-slate-200 bg-white px-8 py-4 flex items-center justify-between"
+          className="border-b border-slate-200 bg-white px-8 py-4 flex items-center justify-between shrink-0"
           data-testid="page-header"
         >
           <div>
@@ -131,7 +134,7 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-8 scrollbar-thin">
+        <div className="flex-1 min-h-0 overflow-auto p-8 scrollbar-thin">
           <Outlet />
         </div>
       </main>

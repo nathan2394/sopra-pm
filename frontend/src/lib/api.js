@@ -76,6 +76,12 @@ export const deleteActivity = (activityId) =>
 // Backlog
 export const fetchBacklog = (params = {}) =>
   client.get("/backlog", { params }).then((r) => r.data);
+export const fetchNextWbRef = (projectId) =>
+  client
+    .get("/backlog/next-ref", {
+      params: projectId ? { project_id: projectId } : {},
+    })
+    .then((r) => r.data.wb_ref);
 export const createBacklogItem = (data) =>
   client.post("/backlog", data).then((r) => r.data);
 export const updateBacklogItem = (id, data, actorId) =>
@@ -84,6 +90,30 @@ export const updateBacklogItem = (id, data, actorId) =>
     .then((r) => r.data);
 export const deleteBacklogItem = (id) =>
   client.delete(`/backlog/${id}`).then((r) => r.data);
+
+// Attachments (images + PDFs, several per backlog item)
+export const attachmentUrl = (attachmentId) => `${API}/attachments/${attachmentId}`;
+export const fetchAttachments = (itemId) =>
+  client.get(`/backlog/${itemId}/attachments`).then((r) => r.data);
+export const uploadAttachments = (itemId, files, actorId) => {
+  const body = new FormData();
+  Array.from(files).forEach((f) => body.append("files", f, f.name || "pasted.png"));
+  return client
+    .post(`/backlog/${itemId}/attachments`, body, {
+      headers: { "Content-Type": "multipart/form-data" },
+      params: actorId ? { actor_id: actorId } : {},
+    })
+    .then((r) => r.data);
+};
+// /api/attachments/{id} needs the bearer token, and <img src> cannot send one —
+// so pull the bytes through the authenticated client and hand back an object URL.
+// Callers must revoke it when they are done with it.
+export const fetchAttachmentObjectUrl = (attachmentId) =>
+  client
+    .get(`/attachments/${attachmentId}`, { responseType: "blob" })
+    .then((r) => URL.createObjectURL(r.data));
+export const deleteAttachment = (attachmentId) =>
+  client.delete(`/attachments/${attachmentId}`).then((r) => r.data);
 
 // Projects
 export const fetchProjects = () =>
