@@ -124,6 +124,7 @@ api.MapProjectEndpoints();
 api.MapBacklogEndpoints();
 api.MapActivityEndpoints();
 api.MapAttachmentEndpoints();
+api.MapTaskEndpoints();
 api.MapDashboardEndpoints();
 
 var logger = app.Services.GetRequiredService<ILogger<Program>>();

@@ -84,6 +84,41 @@ public static class Mappers
         CreatedAt = Iso(r.CreatedAt),
     };
 
+    public static TaskDto ToDto(this TaskRow r) => new()
+    {
+        Id = r.Id,
+        Title = r.Title,
+        BacklogItemId = r.BacklogItemId,
+        AssigneeId = r.AssigneeId,
+        Status = r.Status ?? "In Progress",
+        Blocker = r.Blocker,
+        CreatedAt = Iso(r.CreatedAt),
+        UpdatedAt = Iso(r.UpdatedAt),
+    };
+
+    public static DailyTaskDto ToDto(this DailyTaskRow r) => new()
+    {
+        Id = r.Id,
+        Title = r.Title,
+        BacklogItemId = r.BacklogItemId,
+        AssigneeId = r.AssigneeId,
+        Status = r.Status ?? "In Progress",
+        Blocker = r.Blocker,
+        CreatedAt = Iso(r.CreatedAt),
+        UpdatedAt = Iso(r.UpdatedAt),
+        ItemWbRef = r.ItemWbRef,
+        ItemTitle = r.ItemTitle,
+        ItemStatus = r.ItemStatus,
+        ProjectId = r.ProjectId,
+        // Items outside a project still need a bucket to group under.
+        ProjectName = string.IsNullOrWhiteSpace(r.ProjectName) ? "Unassigned project" : r.ProjectName,
+        ProjectCode = r.ProjectCode,
+        ProjectColor = r.ProjectColor,
+        AssigneeName = r.AssigneeName,
+        AssigneeRole = r.AssigneeRole,
+        AssigneeColor = r.AssigneeColor,
+    };
+
     public static ActivityDto ToDto(this ActivityRow r) => new()
     {
         Id = r.Id,

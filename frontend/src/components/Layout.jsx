@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import UserPicker from "@/components/UserPicker";
 import {
   ChartLine,
+  ClipboardText,
   Kanban,
   ListChecks,
   Users,
@@ -16,6 +17,7 @@ const navItems = [
   { to: "/projects", label: "Projects", icon: FolderOpen, testId: "nav-projects" },
   { to: "/backlog", label: "Backlog", icon: ListChecks, testId: "nav-backlog" },
   { to: "/board", label: "Sprint Board", icon: Kanban, testId: "nav-board" },
+  { to: "/daily", label: "Daily Tasks", icon: ClipboardText, testId: "nav-daily" },
   { to: "/sprints", label: "Sprints", icon: Calendar, testId: "nav-sprints" },
   { to: "/roadmap", label: "Roadmap", icon: GridFour, testId: "nav-roadmap" },
   { to: "/team", label: "Team", icon: Users, testId: "nav-team" },

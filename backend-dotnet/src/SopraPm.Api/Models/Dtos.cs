@@ -207,6 +207,57 @@ public sealed class AttachmentDto
     public string? CreatedAt { get; set; }
 }
 
+public sealed class TaskDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public int BacklogItemId { get; set; }
+    public int AssigneeId { get; set; }
+    public string Status { get; set; } = "In Progress";
+    public string? Blocker { get; set; }
+    public string? CreatedAt { get; set; }
+    public string? UpdatedAt { get; set; }
+}
+
+public sealed class TaskCreate
+{
+    public string? Title { get; set; }
+    public int? AssigneeId { get; set; }
+    public string? Status { get; set; }
+    public string? Blocker { get; set; }
+}
+
+public sealed class TaskUpdate
+{
+    public string? Title { get; set; }
+    public int? AssigneeId { get; set; }
+    public string? Status { get; set; }
+    public string? Blocker { get; set; }
+}
+
+public sealed class DailyTaskDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public int BacklogItemId { get; set; }
+    public int AssigneeId { get; set; }
+    public string Status { get; set; } = "In Progress";
+    public string? Blocker { get; set; }
+    public string? CreatedAt { get; set; }
+    public string? UpdatedAt { get; set; }
+
+    public string ItemWbRef { get; set; } = "";
+    public string ItemTitle { get; set; } = "";
+    public string? ItemStatus { get; set; }
+    public int? ProjectId { get; set; }
+    public string ProjectName { get; set; } = "Unassigned project";
+    public string? ProjectCode { get; set; }
+    public string? ProjectColor { get; set; }
+    public string? AssigneeName { get; set; }
+    public string? AssigneeRole { get; set; }
+    public string? AssigneeColor { get; set; }
+}
+
 public sealed class CommentCreate
 {
     public string? Text { get; set; }

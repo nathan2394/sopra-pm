@@ -115,6 +115,18 @@ export const fetchAttachmentObjectUrl = (attachmentId) =>
 export const deleteAttachment = (attachmentId) =>
   client.delete(`/attachments/${attachmentId}`).then((r) => r.data);
 
+// Tasks (the work items under a backlog entry)
+export const fetchDailyTasks = (params = {}) =>
+  client.get("/tasks/daily", { params }).then((r) => r.data);
+export const fetchTasks = (itemId) =>
+  client.get(`/backlog/${itemId}/tasks`).then((r) => r.data);
+export const createTask = (itemId, data) =>
+  client.post(`/backlog/${itemId}/tasks`, data).then((r) => r.data);
+export const updateTask = (taskId, data) =>
+  client.patch(`/tasks/${taskId}`, data).then((r) => r.data);
+export const deleteTask = (taskId) =>
+  client.delete(`/tasks/${taskId}`).then((r) => r.data);
+
 // Projects
 export const fetchProjects = () =>
   client.get("/projects").then((r) => r.data);

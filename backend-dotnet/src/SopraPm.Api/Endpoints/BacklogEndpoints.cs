@@ -207,7 +207,10 @@ public static class BacklogEndpoints
 
         api.MapDelete("/backlog/{itemId:int}", async (int itemId, Db db) =>
         {
-            // Activity FK is ON DELETE CASCADE — no manual cleanup needed
+            // Activity and attachments cascade. Tasks do NOT — FK_Tasks_Backlog has
+            // no ON DELETE rule, so they have to go first or the delete fails.
+            await db.ExecuteAsync(
+                "DELETE FROM dbo.Tasks WHERE BacklogItemId=@p0", SqlParams.Positional(itemId));
             var affected = await db.ExecuteAsync(
                 "DELETE FROM dbo.BacklogItems WHERE Id=@p0", SqlParams.Positional(itemId));
             if (affected == 0) throw ApiException.NotFound("Item not found");

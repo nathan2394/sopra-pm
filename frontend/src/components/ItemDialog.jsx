@@ -21,14 +21,18 @@ import {
 import ActivityPanel from "@/components/ActivityPanel";
 import { STATUSES, PRIORITIES, SYSTEMS, PRIORITY_COLORS } from "@/lib/constants";
 import {
+  createTask,
   deleteAttachment,
+  deleteTask,
   fetchNextWbRef,
+  fetchTasks,
+  updateTask,
   fetchAttachmentObjectUrl,
   fetchAttachments,
   uploadAttachments,
 } from "@/lib/api";
 import { getActorId } from "@/lib/currentUser";
-import { Paperclip, Trash, FilePdf } from "@phosphor-icons/react";
+import { Paperclip, Trash, FilePdf, Plus, Warning } from "@phosphor-icons/react";
 
 /**
  * The backlog item editor, shared by the Backlog list and the Sprint Board so
@@ -404,6 +408,19 @@ export default function ItemDialog({
                   data-testid="form-notes"
                 />
               </div>
+
+              <div className="space-y-1.5 col-span-2 md:col-span-4">
+                <Label className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                  Tasks
+                </Label>
+                {editing ? (
+                  <TaskTable itemId={editing.id} team={team} />
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Save the item first, then reopen it to add tasks.
+                  </p>
+                )}
+              </div>
             </div>
             </div>
 
@@ -441,6 +458,265 @@ export default function ItemDialog({
   );
 }
 
+
+/**
+ * The tasks under a backlog item: who is doing what, where it stands, and what
+ * is blocking it. Edits save as you make them — selects on change, text fields
+ * on blur — so there is no second save button competing with the item's own.
+ */
+function TaskTable({ itemId, team }) {
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState({ title: "", assignee_id: "", status: "In Progress" });
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchTasks(itemId)
+      .then((list) => !cancelled && setTasks(list))
+      .catch(() => !cancelled && setTasks([]))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId]);
+
+  const add = async () => {
+    const title = draft.title.trim();
+    if (!title) return toast.error("Task title required");
+    if (!draft.assignee_id) return toast.error("Pick an assignee");
+    setAdding(true);
+    try {
+      const created = await createTask(itemId, {
+        title,
+        assignee_id: Number(draft.assignee_id),
+        status: draft.status,
+      });
+      setTasks((prev) => [...prev, created]);
+      setDraft({ title: "", assignee_id: draft.assignee_id, status: "In Progress" });
+      toast.success("Task added");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not add task");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const patch = async (task, changes) => {
+    const previous = tasks;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...changes } : t)));
+    try {
+      const updated = await updateTask(task.id, changes);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+    } catch (err) {
+      setTasks(previous);
+      toast.error(err?.response?.data?.detail || "Could not save task");
+    }
+  };
+
+  const remove = async (task) => {
+    if (!window.confirm(`Delete task "${task.title}"?`)) return;
+    const previous = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    try {
+      await deleteTask(task.id);
+      toast.success("Task deleted");
+    } catch {
+      setTasks(previous);
+      toast.error("Could not delete task");
+    }
+  };
+
+  const memberOptions = team.map((m) => ({ value: String(m.id), label: `${m.name} · ${m.role}` }));
+
+  return (
+    <div className="border border-slate-200 rounded-sm" data-testid="task-table">
+      <div className="grid grid-cols-12 gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[9px] font-mono uppercase tracking-widest text-slate-400">
+        <span className="col-span-4">Task</span>
+        <span className="col-span-3">Assignee</span>
+        <span className="col-span-2">Status</span>
+        <span className="col-span-2">Blocker</span>
+        <span className="col-span-1" />
+      </div>
+
+      {loading ? (
+        <div className="px-3 py-3 text-xs text-slate-400">Loading tasks…</div>
+      ) : tasks.length === 0 ? (
+        <div className="px-3 py-3 text-xs text-slate-400">No tasks yet.</div>
+      ) : (
+        tasks.map((t) => (
+          <TaskRowEditor
+            key={t.id}
+            task={t}
+            memberOptions={memberOptions}
+            onPatch={patch}
+            onRemove={remove}
+          />
+        ))
+      )}
+
+      <div className="grid grid-cols-12 gap-2 px-3 py-2 items-center bg-slate-50/60">
+        <Input
+          value={draft.title}
+          placeholder="New task…"
+          onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          className="col-span-4 rounded-sm h-8 text-sm"
+          data-testid="task-new-title"
+        />
+        <select
+          value={draft.assignee_id}
+          onChange={(e) => setDraft({ ...draft, assignee_id: e.target.value })}
+          className="col-span-3 rounded-sm h-8 text-xs border border-slate-200 bg-white px-2"
+          data-testid="task-new-assignee"
+        >
+          <option value="">— Assignee —</option>
+          {memberOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={draft.status}
+          onChange={(e) => setDraft({ ...draft, status: e.target.value })}
+          className="col-span-2 rounded-sm h-8 text-xs border border-slate-200 bg-white px-2"
+          data-testid="task-new-status"
+        >
+          {STATUSES.map((st) => (
+            <option key={st} value={st}>
+              {st}
+            </option>
+          ))}
+        </select>
+        <div className="col-span-3 flex justify-end">
+          <Button
+            type="button"
+            onClick={add}
+            disabled={adding}
+            className="rounded-sm h-8 text-xs bg-[#0033CC] hover:bg-[#0028A3]"
+            data-testid="task-add"
+          >
+            <Plus size={12} className="mr-1" />
+            Add
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One task row. Text fields save a short moment after you stop typing rather
+ * than on blur — an edit is then never lost if the dialog closes first, and it
+ * does not depend on focus events the browser only fires when the window is
+ * frontmost.
+ */
+function TaskRowEditor({ task, memberOptions, onPatch, onRemove }) {
+  const [title, setTitle] = useState(task.title);
+  const [blocker, setBlocker] = useState(task.blocker || "");
+  const timers = useRef({});
+
+  // Re-sync when the row is replaced by the server's version.
+  useEffect(() => {
+    setTitle(task.title);
+    setBlocker(task.blocker || "");
+  }, [task.id, task.title, task.blocker]);
+
+  useEffect(() => {
+    const t = timers.current;
+    return () => Object.values(t).forEach(clearTimeout);
+  }, []);
+
+  const queue = (field, value, compareTo) => {
+    clearTimeout(timers.current[field]);
+    timers.current[field] = setTimeout(() => {
+      const trimmed = value.trim();
+      if (field === "title" && trimmed.length === 0) {
+        setTitle(task.title); // a task must keep a title
+        return;
+      }
+      if (trimmed === (compareTo || "")) return;
+      onPatch(task, { [field]: trimmed });
+    }, 700);
+  };
+
+  return (
+    <div
+      className="grid grid-cols-12 gap-2 px-3 py-1.5 border-b border-slate-100 items-center"
+      data-testid={`task-row-${task.id}`}
+    >
+      <Input
+        value={title}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          queue("title", e.target.value, task.title);
+        }}
+        className="col-span-4 rounded-sm h-8 text-sm"
+        data-testid={`task-title-${task.id}`}
+      />
+      <select
+        value={String(task.assignee_id)}
+        onChange={(e) => onPatch(task, { assignee_id: Number(e.target.value) })}
+        className="col-span-3 rounded-sm h-8 text-xs border border-slate-200 bg-white px-2"
+        data-testid={`task-assignee-${task.id}`}
+      >
+        {memberOptions.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <select
+        value={task.status}
+        onChange={(e) => onPatch(task, { status: e.target.value })}
+        className="col-span-2 rounded-sm h-8 text-xs border border-slate-200 bg-white px-2"
+        data-testid={`task-status-${task.id}`}
+      >
+        {STATUSES.map((st) => (
+          <option key={st} value={st}>
+            {st}
+          </option>
+        ))}
+      </select>
+      <div className="col-span-2 relative">
+        {blocker ? (
+          <Warning
+            size={12}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-amber-500 z-10"
+          />
+        ) : null}
+        <Input
+          value={blocker}
+          placeholder="—"
+          onChange={(e) => {
+            setBlocker(e.target.value);
+            queue("blocker", e.target.value, task.blocker);
+          }}
+          className={`rounded-sm h-8 text-xs ${
+            blocker ? "pl-6 !border-amber-400 bg-amber-50" : ""
+          }`}
+          data-testid={`task-blocker-${task.id}`}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => onRemove(task)}
+        className="col-span-1 justify-self-end text-slate-400 hover:text-red-600"
+        title="Delete task"
+        data-testid={`task-delete-${task.id}`}
+      >
+        <Trash size={14} />
+      </button>
+    </div>
+  );
+}
 
 /** Attached screenshots and PDFs: thumbnails, an upload button, and removal. */
 function AttachmentGallery({ attachments, busy, onPick, onRemove }) {

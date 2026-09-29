@@ -94,3 +94,39 @@ public sealed class AttachmentMetaRow
     public int? CreatedBy { get; init; }
     public DateTime? CreatedAt { get; init; }
 }
+
+public sealed class TaskRow
+{
+    public int Id { get; init; }
+    public string Title { get; init; } = "";
+    public int BacklogItemId { get; init; }
+    public int AssigneeId { get; init; }
+    public string? Status { get; init; }
+    public string? Blocker { get; init; }
+    public DateTime? CreatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
+}
+
+/// <summary>A task with the backlog item, project and assignee it belongs to.</summary>
+public sealed class DailyTaskRow
+{
+    public int Id { get; init; }
+    public string Title { get; init; } = "";
+    public int BacklogItemId { get; init; }
+    public int AssigneeId { get; init; }
+    public string? Status { get; init; }
+    public string? Blocker { get; init; }
+    public DateTime? CreatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
+
+    public string ItemWbRef { get; init; } = "";
+    public string ItemTitle { get; init; } = "";
+    public string? ItemStatus { get; init; }
+    public int? ProjectId { get; init; }
+    public string? ProjectName { get; init; }
+    public string? ProjectCode { get; init; }
+    public string? ProjectColor { get; init; }
+    public string? AssigneeName { get; init; }
+    public string? AssigneeRole { get; init; }
+    public string? AssigneeColor { get; init; }
+}

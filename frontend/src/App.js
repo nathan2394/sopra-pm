@@ -6,6 +6,7 @@ import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Backlog from "@/pages/Backlog";
+import DailyTasks from "@/pages/DailyTasks";
 import SprintBoard from "@/pages/SprintBoard";
 import Sprints from "@/pages/Sprints";
 import Team from "@/pages/Team";
@@ -26,6 +27,7 @@ function App() {
               <Route path="/projects" element={<Projects />} />
               <Route path="/projects/:id" element={<ProjectDetail />} />
               <Route path="/backlog" element={<Backlog />} />
+              <Route path="/daily" element={<DailyTasks />} />
               <Route path="/board" element={<SprintBoard />} />
               <Route path="/sprints" element={<Sprints />} />
               <Route path="/roadmap" element={<Roadmap />} />
