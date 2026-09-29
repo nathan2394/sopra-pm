@@ -24,6 +24,7 @@ import { DotsSixVertical } from "@phosphor-icons/react";
 const COLUMN_META = {
   Backlog: { tint: "#F1F5F9", accent: "#64748B" },
   "In Progress": { tint: "#EFF6FF", accent: "#0033CC" },
+  Pending: { tint: "#FFF7ED", accent: "#EA580C" },
   "In Review": { tint: "#F5F3FF", accent: "#7C3AED" },
   Done: { tint: "#ECFDF5", accent: "#059669" },
 };
@@ -210,7 +211,7 @@ export default function SprintBoard() {
 
       {/* Kanban */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {STATUSES.map((status) => {
             const meta = COLUMN_META[status];
             const colItems = columns[status] || [];

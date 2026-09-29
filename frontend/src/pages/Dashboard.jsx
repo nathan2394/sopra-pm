@@ -6,6 +6,7 @@ import {
   fetchTeamWorkload,
 } from "@/lib/api";
 import { PRIORITY_COLORS, SYSTEM_COLORS } from "@/lib/constants";
+import TodayTasksCard from "@/components/TodayTasksCard";
 import {
   ResponsiveContainer,
   BarChart,
@@ -26,6 +27,7 @@ import {
   Stack,
   Warning,
   Target,
+  PauseCircle,
 } from "@phosphor-icons/react";
 
 function Card({ children, className = "", ...rest }) {
@@ -110,7 +112,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6" data-testid="dashboard-page">
       {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <KpiCard
           label="Total Story Points"
           value={summary.total_sp}
@@ -145,6 +147,14 @@ export default function Dashboard() {
           hint="Currently building"
         />
         <KpiCard
+          label="Pending"
+          value={summary.pending}
+          icon={PauseCircle}
+          accent="#EA580C"
+          testId="kpi-pending"
+          hint="On hold"
+        />
+        <KpiCard
           label="In Review"
           value={summary.in_review}
           icon={Target}
@@ -161,6 +171,9 @@ export default function Dashboard() {
           hint="Awaiting start"
         />
       </div>
+
+      {/* Today's daily tasks per member */}
+      <TodayTasksCard />
 
       {/* Quarterly + Velocity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -548,7 +548,7 @@ async def project_summary(project_id: int):
         ph = i.get("Phase") or "Unphased"
         if ph not in phases:
             phases[ph] = {"phase": ph, "items": 0, "total_sp": 0, "done_sp": 0,
-                          "in_progress": 0, "in_review": 0, "backlog": 0, "done": 0}
+                          "pending": 0, "in_progress": 0, "in_review": 0, "backlog": 0, "done": 0}
         sp = i.get("StoryPoints", 0) or 0
         phases[ph]["items"] += 1
         phases[ph]["total_sp"] += sp
@@ -556,6 +556,8 @@ async def project_summary(project_id: int):
         if st == "Done":
             phases[ph]["done_sp"] += sp
             phases[ph]["done"] += 1
+        elif st == "Pending":
+            phases[ph]["pending"] += 1
         elif st == "In Progress":
             phases[ph]["in_progress"] += 1
         elif st == "In Review":
@@ -833,6 +835,7 @@ async def dashboard_summary():
               ISNULL(SUM(StoryPoints), 0) AS total_sp,
               SUM(CASE WHEN [Status]='Done' THEN 1 ELSE 0 END) AS done_items,
               ISNULL(SUM(CASE WHEN [Status]='Done' THEN StoryPoints ELSE 0 END), 0) AS done_sp,
+              SUM(CASE WHEN [Status]='Pending'     THEN 1 ELSE 0 END) AS pending,
               SUM(CASE WHEN [Status]='In Progress' THEN 1 ELSE 0 END) AS in_progress,
               SUM(CASE WHEN [Status]='In Review'   THEN 1 ELSE 0 END) AS in_review,
               SUM(CASE WHEN [Status]='Backlog'     THEN 1 ELSE 0 END) AS backlog
@@ -874,6 +877,7 @@ async def dashboard_summary():
         "total_sp": total_sp,
         "done_items": total_row["done_items"] or 0,
         "done_sp": done_sp,
+        "pending": total_row["pending"] or 0,
         "in_progress": total_row["in_progress"] or 0,
         "in_review": total_row["in_review"] or 0,
         "backlog": total_row["backlog"] or 0,

@@ -160,6 +160,9 @@ DEMO_STATUS = {
     "WB-11": ("In Progress", 40, None),
     "WB-20": ("In Progress", 30, None),
     "WB-23": ("In Review", 70, None),
+    "WB-06": ("Pending", 0, None),  # Pending assignment
+    "WB-33": ("Pending", 0, None),  # Pending dev assignment
+    "WB-42": ("Pending", 0, None),  # Pending dev assignment
 }
 
 # Extra assignees not covered by the original (dev, qa) columns.

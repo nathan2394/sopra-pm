@@ -162,6 +162,9 @@ internal static class SeedData
         ["WB-11"] = new DemoStatus("In Progress", 40, null),
         ["WB-20"] = new DemoStatus("In Progress", 30, null),
         ["WB-23"] = new DemoStatus("In Review", 70, null),
+        ["WB-06"] = new DemoStatus("Pending", 0, null), // Pending assignment
+        ["WB-33"] = new DemoStatus("Pending", 0, null), // Pending dev assignment
+        ["WB-42"] = new DemoStatus("Pending", 0, null), // Pending dev assignment
     };
 
     /// <summary>Extra assignees not covered by the original (dev, qa) columns.</summary>
