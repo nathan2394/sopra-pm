@@ -17,8 +17,8 @@ export const SYSTEM_COLORS = {
 
 export const STATUS_COLORS = {
   Backlog: { bg: "#F1F5F9", text: "#475569", dot: "#64748B" },
-  Pending: { bg: "#FFEDD5", text: "#9A3412", dot: "#EA580C" },
   "In Progress": { bg: "#DBEAFE", text: "#1E40AF", dot: "#0033CC" },
+  Pending: { bg: "#FFEDD5", text: "#9A3412", dot: "#EA580C" },
   "In Review": { bg: "#EDE9FE", text: "#5B21B6", dot: "#7C3AED" },
   Done: { bg: "#D1FAE5", text: "#065F46", dot: "#059669" },
 };
@@ -34,7 +34,7 @@ export const SYSTEMS = [
 ];
 
 export const PRIORITIES = ["P1", "P2", "P3", "P4"];
-export const STATUSES = ["Backlog", "Pending", "In Progress", "In Review", "Done"];
+export const STATUSES = ["Backlog", "In Progress", "Pending", "In Review", "Done"];
 export const ROLES = [
   "Backend Dev",
   "QA",

@@ -6,6 +6,7 @@ import {
   fetchTeamWorkload,
 } from "@/lib/api";
 import { PRIORITY_COLORS, SYSTEM_COLORS } from "@/lib/constants";
+import TodayTasksCard from "@/components/TodayTasksCard";
 import {
   ResponsiveContainer,
   BarChart,
@@ -138,20 +139,20 @@ export default function Dashboard() {
           hint="Items completed"
         />
         <KpiCard
-          label="Pending"
-          value={summary.pending}
-          icon={PauseCircle}
-          accent="#EA580C"
-          testId="kpi-pending"
-          hint="On hold / waiting"
-        />
-        <KpiCard
           label="In Progress"
           value={summary.in_progress}
           icon={Clock}
           accent="#0033CC"
           testId="kpi-in-progress"
           hint="Currently building"
+        />
+        <KpiCard
+          label="Pending"
+          value={summary.pending}
+          icon={PauseCircle}
+          accent="#EA580C"
+          testId="kpi-pending"
+          hint="On hold"
         />
         <KpiCard
           label="In Review"
@@ -170,6 +171,9 @@ export default function Dashboard() {
           hint="Awaiting start"
         />
       </div>
+
+      {/* Today's daily tasks per member */}
+      <TodayTasksCard />
 
       {/* Quarterly + Velocity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

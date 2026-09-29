@@ -1,7 +1,7 @@
 -- =====================================================================
 -- SOPRA PM — Migration 006
--- Adds the "Pending" backlog status (Backlog | Pending | In Progress |
--- In Review | Done). BacklogItems.[Status] is a free NVARCHAR(20) with no
+-- Adds the "Pending" (on hold) backlog status (Backlog | In Progress |
+-- Pending | In Review | Done). BacklogItems.[Status] is a free NVARCHAR(20) with no
 -- CHECK constraint, so no schema change is needed.
 --
 -- Moves items that are still in Backlog but are flagged in their notes as

@@ -23,8 +23,8 @@ import { DotsSixVertical } from "@phosphor-icons/react";
 
 const COLUMN_META = {
   Backlog: { tint: "#F1F5F9", accent: "#64748B" },
-  Pending: { tint: "#FFF7ED", accent: "#EA580C" },
   "In Progress": { tint: "#EFF6FF", accent: "#0033CC" },
+  Pending: { tint: "#FFF7ED", accent: "#EA580C" },
   "In Review": { tint: "#F5F3FF", accent: "#7C3AED" },
   Done: { tint: "#ECFDF5", accent: "#059669" },
 };

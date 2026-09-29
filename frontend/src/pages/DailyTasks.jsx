@@ -2,17 +2,122 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { fetchDailyTasks, fetchProjects, fetchTeam, updateTask } from "@/lib/api";
 import { STATUSES, STATUS_COLORS } from "@/lib/constants";
+import { isoToday, isEvening, plural, summarizeByMember } from "@/lib/dailyReport";
+import DailyReportDialog from "@/components/DailyReportDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Warning } from "@phosphor-icons/react";
+import { Warning, Moon, X } from "@phosphor-icons/react";
 
-/** Local date parts — toISOString() would shift the day at WIB (+07:00). */
-const isoToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
+const GROUP_BY = [
+  { value: "project", label: "Project" },
+  { value: "member", label: "Member" },
+  { value: "status", label: "Status" },
+];
+
+const GROUP_BY_KEY = "daily-tasks-group-by";
+
+const readGroupBy = () => {
+  try {
+    const v = localStorage.getItem(GROUP_BY_KEY);
+    return GROUP_BY.some((g) => g.value === v) ? v : "project";
+  } catch {
+    return "project";
+  }
 };
+
+function Avatar({ name, color, size = "w-5 h-5", title }) {
+  return (
+    <div
+      className={`${size} rounded-sm shrink-0 flex items-center justify-center text-[9px] font-bold text-white font-mono`}
+      style={{ backgroundColor: color || "#64748B" }}
+      title={title}
+    >
+      {(name || "—").slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
+
+function ProjectTag({ code, color, title }) {
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded-sm text-[9px] font-bold text-white font-mono shrink-0"
+      style={{ backgroundColor: color || "#64748B" }}
+      title={title}
+    >
+      {code || "—"}
+    </span>
+  );
+}
+
+/** One task row. Which context columns show depends on how the list is grouped. */
+function TaskLine({ task: t, showAssignee = true, showItem = false, onStatus }) {
+  return (
+    <div
+      className="px-4 py-2 flex items-center gap-3 text-sm"
+      data-testid={`daily-task-${t.id}`}
+    >
+      {showAssignee && (
+        <Avatar
+          name={t.assignee_name}
+          color={t.assignee_color}
+          title={`${t.assignee_name} · ${t.assignee_role}`}
+        />
+      )}
+      {showItem && (
+        <>
+          <ProjectTag code={t.project_code} color={t.project_color} title={t.project_name} />
+          <span
+            className="font-mono text-[10px] font-bold text-slate-500 shrink-0"
+            title={t.item_title}
+          >
+            {t.item_wb_ref}
+          </span>
+        </>
+      )}
+      <span className="text-slate-900 flex-1 truncate">{t.title}</span>
+
+      {t.blocker && (
+        <span
+          className="flex items-center gap-1 text-[10px] font-mono text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-1.5 py-0.5 max-w-xs truncate"
+          title={t.blocker}
+        >
+          <Warning size={11} />
+          {t.blocker}
+        </span>
+      )}
+
+      <select
+        value={t.status}
+        onChange={(e) => onStatus(t, e.target.value)}
+        className="rounded-sm h-7 text-[11px] border px-1.5 font-mono shrink-0"
+        style={{
+          borderColor: STATUS_COLORS[t.status]?.dot || "#CBD5E1",
+          color: STATUS_COLORS[t.status]?.text || "#475569",
+          backgroundColor: STATUS_COLORS[t.status]?.bg || "#fff",
+        }}
+        data-testid={`daily-task-status-${t.id}`}
+      >
+        {STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function GroupHeader({ children, count }) {
+  return (
+    <div className="flex items-center gap-3 mb-2">
+      {children}
+      <div className="flex-1 h-px bg-slate-200" />
+      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+        {plural(count, "task")}
+      </span>
+    </div>
+  );
+}
 
 export default function DailyTasks() {
   const [tasks, setTasks] = useState([]);
@@ -21,9 +126,11 @@ export default function DailyTasks() {
   const [loading, setLoading] = useState(true);
 
   const [date, setDate] = useState(isoToday());
-  const [memberId, setMemberId] = useState("all");
+  const [memberId, setMemberId] = useState(null);
   const [projectId, setProjectId] = useState("all");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState(null);
+  const [groupBy, setGroupBy] = useState(readGroupBy);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchTeam(), fetchProjects()]).then(([t, p]) => {
@@ -33,13 +140,21 @@ export default function DailyTasks() {
   }, []);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(GROUP_BY_KEY, groupBy);
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [groupBy]);
+
+  // Date and project narrow what is fetched. Member and status are filtered
+  // here instead, so their chips keep showing every option with its count.
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     fetchDailyTasks({
       ...(date ? { date } : {}),
-      ...(memberId !== "all" ? { member_id: memberId } : {}),
       ...(projectId !== "all" ? { project_id: projectId } : {}),
-      ...(status !== "all" ? { status } : {}),
     })
       .then((rows) => !cancelled && setTasks(rows))
       .catch(() => !cancelled && setTasks([]))
@@ -47,16 +162,40 @@ export default function DailyTasks() {
     return () => {
       cancelled = true;
     };
-  }, [date, memberId, projectId, status]);
+  }, [date, projectId]);
+
+  // With a project picked, a member without tasks in it hasn't "missed" anything.
+  const members = useMemo(() => {
+    const all = summarizeByMember(tasks, team);
+    return projectId === "all" && date ? all : all.filter((m) => m.updated);
+  }, [tasks, team, projectId, date]);
+  const updatedMembers = members.filter((m) => m.updated);
+  const missingMembers = members.filter((m) => !m.updated);
+
+  const memberTasks = useMemo(
+    () => (memberId == null ? tasks : tasks.filter((t) => t.assignee_id === memberId)),
+    [tasks, memberId],
+  );
+
+  const statusCounts = useMemo(() => {
+    const c = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    memberTasks.forEach((t) => (c[t.status] = (c[t.status] || 0) + 1));
+    return c;
+  }, [memberTasks]);
+
+  const visible = useMemo(
+    () => (status == null ? memberTasks : memberTasks.filter((t) => t.status === status)),
+    [memberTasks, status],
+  );
 
   // Project -> backlog item -> tasks, which is how the board is read out loud
   // in a stand-up.
-  const grouped = useMemo(() => {
-    const byProject = new Map();
-    tasks.forEach((t) => {
+  const byProject = useMemo(() => {
+    const map = new Map();
+    visible.forEach((t) => {
       const pk = t.project_id ?? "none";
-      if (!byProject.has(pk)) {
-        byProject.set(pk, {
+      if (!map.has(pk)) {
+        map.set(pk, {
           key: pk,
           name: t.project_name,
           code: t.project_code,
@@ -64,7 +203,7 @@ export default function DailyTasks() {
           items: new Map(),
         });
       }
-      const proj = byProject.get(pk);
+      const proj = map.get(pk);
       if (!proj.items.has(t.backlog_item_id)) {
         proj.items.set(t.backlog_item_id, {
           id: t.backlog_item_id,
@@ -76,33 +215,23 @@ export default function DailyTasks() {
       }
       proj.items.get(t.backlog_item_id).tasks.push(t);
     });
-    return [...byProject.values()]
+    return [...map.values()]
       .map((p) => ({ ...p, items: [...p.items.values()] }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks]);
+  }, [visible]);
 
-  // Per-member tally for the selected day.
-  const perMember = useMemo(() => {
-    const map = new Map();
-    tasks.forEach((t) => {
-      if (!map.has(t.assignee_id)) {
-        map.set(t.assignee_id, {
-          id: t.assignee_id,
-          name: t.assignee_name || "—",
-          role: t.assignee_role,
-          color: t.assignee_color,
-          total: 0,
-          done: 0,
-          blocked: 0,
-        });
-      }
-      const m = map.get(t.assignee_id);
-      m.total += 1;
-      if (t.status === "Done") m.done += 1;
-      if (t.blocker) m.blocked += 1;
-    });
-    return [...map.values()].sort((a, b) => b.total - a.total);
-  }, [tasks]);
+  const byMember = useMemo(
+    () => summarizeByMember(visible, []).filter((m) => m.total > 0),
+    [visible],
+  );
+
+  const byStatus = useMemo(
+    () =>
+      STATUSES.map((s) => ({ status: s, tasks: visible.filter((t) => t.status === s) })).filter(
+        (g) => g.tasks.length > 0,
+      ),
+    [visible],
+  );
 
   const setTaskStatus = async (task, next) => {
     const previous = tasks;
@@ -115,7 +244,8 @@ export default function DailyTasks() {
     }
   };
 
-  const filtered = memberId !== "all" || projectId !== "all" || status !== "all" || !!date;
+  const filtered = memberId != null || projectId !== "all" || status != null || !!date;
+  const selectedMember = members.find((m) => m.id === memberId);
 
   return (
     <div className="space-y-4" data-testid="daily-page">
@@ -143,22 +273,6 @@ export default function DailyTasks() {
         <div className="h-6 w-px bg-slate-200" />
 
         <select
-          value={memberId}
-          onChange={(e) => setMemberId(e.target.value)}
-          className={`rounded-sm h-9 text-xs border px-2 bg-white ${
-            memberId !== "all" ? "border-[#0033CC] bg-[#0033CC]/5" : "border-slate-200"
-          }`}
-          data-testid="daily-member"
-        >
-          <option value="all">All members</option>
-          {team.map((m) => (
-            <option key={m.id} value={String(m.id)}>
-              {m.name} · {m.role}
-            </option>
-          ))}
-        </select>
-
-        <select
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
           className={`rounded-sm h-9 text-xs border px-2 bg-white ${
@@ -175,31 +289,15 @@ export default function DailyTasks() {
           ))}
         </select>
 
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className={`rounded-sm h-9 text-xs border px-2 bg-white ${
-            status !== "all" ? "border-[#0033CC] bg-[#0033CC]/5" : "border-slate-200"
-          }`}
-          data-testid="daily-status"
-        >
-          <option value="all">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-
         {filtered && (
           <Button
             variant="ghost"
             className="rounded-sm h-9 text-xs text-slate-500"
             onClick={() => {
               setDate("");
-              setMemberId("all");
+              setMemberId(null);
               setProjectId("all");
-              setStatus("all");
+              setStatus(null);
             }}
             data-testid="daily-clear"
           >
@@ -207,66 +305,232 @@ export default function DailyTasks() {
           </Button>
         )}
 
-        <div className="ml-auto text-[10px] font-mono uppercase tracking-widest text-slate-500">
-          {tasks.length} tasks · {perMember.length} members
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+            {plural(visible.length, "task")} · {plural(updatedMembers.length, "member")}
+          </span>
+          {date && (
+            <Button
+              variant={isEvening() && date === isoToday() ? "default" : "outline"}
+              className={`rounded-sm h-9 text-xs ${
+                isEvening() && date === isoToday()
+                  ? "bg-[#0033CC] hover:bg-[#0028A3]"
+                  : ""
+              }`}
+              onClick={() => setReportOpen(true)}
+              data-testid="daily-report-open"
+            >
+              <Moon size={14} className="mr-1.5" />
+              Evening report
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Per-member tally */}
-      {perMember.length > 0 && (
-        <div className="flex flex-wrap gap-2" data-testid="daily-members">
-          {perMember.map((m) => (
+      {/* Member chips — click to filter, click again to clear */}
+      {members.length > 0 && (
+        <div className="space-y-2" data-testid="daily-members">
+          <div className="flex flex-wrap gap-2">
+            {updatedMembers.map((m) => {
+              const active = memberId === m.id;
+              return (
+                <button
+                  type="button"
+                  key={m.id}
+                  onClick={() => setMemberId(active ? null : m.id)}
+                  className={`bg-white border rounded-sm px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                    active
+                      ? "border-[#0033CC] ring-1 ring-[#0033CC] bg-[#0033CC]/5"
+                      : "border-slate-200 hover:border-slate-400"
+                  } ${memberId != null && !active ? "opacity-50" : ""}`}
+                  data-testid={`daily-member-${m.id}`}
+                  aria-pressed={active}
+                >
+                  <Avatar name={m.name} color={m.color} size="w-6 h-6" />
+                  <div className="leading-tight">
+                    <div className="text-xs font-semibold text-slate-900">{m.name}</div>
+                    <div className="text-[10px] font-mono text-slate-500">
+                      {plural(m.total, "task")} · {m.counts.Done || 0} done
+                      {m.blocked > 0 ? ` · ${m.blocked} blocked` : ""}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {missingMembers.length > 0 && (
             <div
-              key={m.id}
-              className="bg-white border border-slate-200 rounded-sm px-3 py-2 flex items-center gap-2"
-              data-testid={`daily-member-${m.id}`}
+              className="flex items-center gap-2 flex-wrap text-xs"
+              data-testid="daily-not-updated"
             >
-              <div
-                className="w-6 h-6 rounded-sm flex items-center justify-center text-[9px] font-bold text-white font-mono"
-                style={{ backgroundColor: m.color || "#64748B" }}
-              >
-                {m.name.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="leading-tight">
-                <div className="text-xs font-semibold text-slate-900">{m.name}</div>
-                <div className="text-[10px] font-mono text-slate-500">
-                  {m.total} tasks · {m.done} done
-                  {m.blocked > 0 ? ` · ${m.blocked} blocked` : ""}
-                </div>
-              </div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-red-600 font-bold">
+                No update {date === isoToday() ? "yet" : "that day"} · {missingMembers.length}
+              </span>
+              {missingMembers.map((m) => (
+                <span
+                  key={m.id}
+                  className="flex items-center gap-1.5 border border-dashed border-red-200 bg-red-50 text-red-700 rounded-sm px-2 py-1"
+                  title={m.role}
+                  data-testid={`daily-missing-${m.id}`}
+                >
+                  <Avatar name={m.name} color={m.color} size="w-4 h-4" />
+                  {m.name}
+                </span>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
-      {/* Project -> backlog item -> tasks */}
+      {/* Status chips + view switch */}
+      <div className="flex items-center gap-2 flex-wrap" data-testid="daily-statuses">
+        {STATUSES.map((s) => {
+          const c = STATUS_COLORS[s];
+          const active = status === s;
+          return (
+            <button
+              type="button"
+              key={s}
+              onClick={() => setStatus(active ? null : s)}
+              className={`flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs font-mono transition-opacity ${
+                status != null && !active ? "opacity-40" : ""
+              } ${active ? "ring-1" : ""}`}
+              style={{
+                backgroundColor: c.bg,
+                color: c.text,
+                borderColor: active ? c.dot : "transparent",
+                "--tw-ring-color": c.dot,
+              }}
+              data-testid={`daily-status-${s.replace(/\s+/g, "-").toLowerCase()}`}
+              aria-pressed={active}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c.dot }} />
+              {s}
+              <span className="font-bold">{statusCounts[s] || 0}</span>
+            </button>
+          );
+        })}
+
+        {(memberId != null || status != null) && (
+          <button
+            type="button"
+            onClick={() => {
+              setMemberId(null);
+              setStatus(null);
+            }}
+            className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-1"
+            data-testid="daily-clear-chips"
+          >
+            <X size={12} />
+            {[selectedMember?.name, status].filter(Boolean).join(" · ")}
+          </button>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+            View by
+          </span>
+          <div className="flex rounded-sm border border-slate-200 bg-white overflow-hidden">
+            {GROUP_BY.map((g) => (
+              <button
+                type="button"
+                key={g.value}
+                onClick={() => setGroupBy(g.value)}
+                className={`px-3 h-8 text-xs font-semibold ${
+                  groupBy === g.value
+                    ? "bg-[#0033CC] text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+                data-testid={`daily-view-${g.value}`}
+                aria-pressed={groupBy === g.value}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="bg-white border border-slate-200 rounded-sm p-8 text-center text-sm text-slate-400">
           Loading…
         </div>
-      ) : grouped.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-sm p-8 text-center text-sm text-slate-400">
-          No tasks {date ? `touched on ${date}` : "found"}.
+          No tasks {date ? `touched on ${date}` : "found"}
+          {memberId != null || status != null ? " for this filter" : ""}.
+        </div>
+      ) : groupBy === "member" ? (
+        /* Member -> tasks */
+        <div className="space-y-4">
+          {byMember.map((m) => (
+            <div key={m.id} data-testid={`daily-group-member-${m.id}`}>
+              <GroupHeader count={m.total}>
+                <Avatar name={m.name} color={m.color} size="w-6 h-6" />
+                <h2 className="font-display font-black text-base tracking-tight text-slate-900">
+                  {m.name}
+                </h2>
+                <span className="text-xs text-slate-500">{m.role}</span>
+                {m.blocked > 0 && (
+                  <span className="text-[10px] font-mono text-amber-700">
+                    {m.blocked} blocked
+                  </span>
+                )}
+              </GroupHeader>
+              <div className="bg-white border border-slate-200 rounded-sm divide-y divide-slate-100">
+                {m.tasks.map((t) => (
+                  <TaskLine
+                    key={t.id}
+                    task={t}
+                    showAssignee={false}
+                    showItem
+                    onStatus={setTaskStatus}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : groupBy === "status" ? (
+        /* Status -> tasks */
+        <div className="space-y-4">
+          {byStatus.map((g) => {
+            const c = STATUS_COLORS[g.status];
+            return (
+              <div
+                key={g.status}
+                data-testid={`daily-group-status-${g.status.replace(/\s+/g, "-").toLowerCase()}`}
+              >
+                <GroupHeader count={g.tasks.length}>
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.dot }} />
+                  <h2 className="font-display font-black text-base tracking-tight text-slate-900">
+                    {g.status}
+                  </h2>
+                </GroupHeader>
+                <div
+                  className="bg-white border border-slate-200 rounded-sm divide-y divide-slate-100 border-l-2"
+                  style={{ borderLeftColor: c.dot }}
+                >
+                  {g.tasks.map((t) => (
+                    <TaskLine key={t.id} task={t} showItem onStatus={setTaskStatus} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
+        /* Project -> backlog item -> tasks */
         <div className="space-y-4">
-          {grouped.map((proj) => (
+          {byProject.map((proj) => (
             <div key={proj.key} data-testid={`daily-project-${proj.code || proj.key}`}>
-              <div className="flex items-center gap-3 mb-2">
-                <span
-                  className="px-1.5 py-0.5 rounded-sm text-[9px] font-bold text-white font-mono"
-                  style={{ backgroundColor: proj.color || "#64748B" }}
-                >
-                  {proj.code || "—"}
-                </span>
+              <GroupHeader count={proj.items.reduce((a, i) => a + i.tasks.length, 0)}>
+                <ProjectTag code={proj.code} color={proj.color} />
                 <h2 className="font-display font-black text-base tracking-tight text-slate-900">
                   {proj.name}
                 </h2>
-                <div className="flex-1 h-px bg-slate-200" />
-                <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-                  {proj.items.reduce((a, i) => a + i.tasks.length, 0)} tasks
-                </span>
-              </div>
+              </GroupHeader>
 
               <div className="space-y-2">
                 {proj.items.map((item) => (
@@ -289,48 +553,7 @@ export default function DailyTasks() {
 
                     <div className="divide-y divide-slate-100">
                       {item.tasks.map((t) => (
-                        <div
-                          key={t.id}
-                          className="px-4 py-2 flex items-center gap-3 text-sm"
-                          data-testid={`daily-task-${t.id}`}
-                        >
-                          <div
-                            className="w-5 h-5 rounded-sm shrink-0 flex items-center justify-center text-[9px] font-bold text-white font-mono"
-                            style={{ backgroundColor: t.assignee_color || "#64748B" }}
-                            title={`${t.assignee_name} · ${t.assignee_role}`}
-                          >
-                            {(t.assignee_name || "—").slice(0, 2).toUpperCase()}
-                          </div>
-                          <span className="text-slate-900 flex-1 truncate">{t.title}</span>
-
-                          {t.blocker && (
-                            <span
-                              className="flex items-center gap-1 text-[10px] font-mono text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-1.5 py-0.5 max-w-xs truncate"
-                              title={t.blocker}
-                            >
-                              <Warning size={11} />
-                              {t.blocker}
-                            </span>
-                          )}
-
-                          <select
-                            value={t.status}
-                            onChange={(e) => setTaskStatus(t, e.target.value)}
-                            className="rounded-sm h-7 text-[11px] border px-1.5 font-mono shrink-0"
-                            style={{
-                              borderColor: STATUS_COLORS[t.status]?.dot || "#CBD5E1",
-                              color: STATUS_COLORS[t.status]?.text || "#475569",
-                              backgroundColor: STATUS_COLORS[t.status]?.bg || "#fff",
-                            }}
-                            data-testid={`daily-task-status-${t.id}`}
-                          >
-                            {STATUSES.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <TaskLine key={t.id} task={t} onStatus={setTaskStatus} />
                       ))}
                     </div>
                   </div>
@@ -340,6 +563,13 @@ export default function DailyTasks() {
           ))}
         </div>
       )}
+
+      <DailyReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        date={date}
+        members={members}
+      />
     </div>
   );
 }

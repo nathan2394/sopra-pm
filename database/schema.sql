@@ -114,7 +114,7 @@ CREATE TABLE dbo.BacklogItems (
     TargetDate     DATE          NULL,
     ActualDate     DATE          NULL,
     PercentDone    INT           NOT NULL DEFAULT (0),
-    [Status]       NVARCHAR(20)  NOT NULL DEFAULT ('Backlog'),   -- Backlog | Pending | In Progress | In Review | Done
+    [Status]       NVARCHAR(20)  NOT NULL DEFAULT ('Backlog'),   -- Backlog | In Progress | Pending | In Review | Done
     Notes          NVARCHAR(MAX) NULL,
     CreatedAt      DATETIME2(3)  NOT NULL DEFAULT (SYSUTCDATETIME()),
     UpdatedAt      DATETIME2(3)  NOT NULL DEFAULT (SYSUTCDATETIME()),
