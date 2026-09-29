@@ -1,12 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   fetchSummary,
   fetchQuarterly,
   fetchSprintVelocity,
-  fetchTeamWorkload,
+  fetchBacklog,
+  fetchProjects,
+  fetchSprints,
+  fetchTeam,
 } from "@/lib/api";
-import { PRIORITY_COLORS, SYSTEM_COLORS } from "@/lib/constants";
+import { PRIORITY_COLORS } from "@/lib/constants";
+import { isoToday } from "@/lib/dailyReport";
+import {
+  attentionItems,
+  findActiveSprint,
+  isOverdue,
+  memberLoad,
+  projectOverview,
+  sprintProgress,
+} from "@/lib/insights";
 import TodayTasksCard from "@/components/TodayTasksCard";
+import ProjectOverviewCard from "@/components/dashboard/ProjectOverviewCard";
+import AttentionCard from "@/components/dashboard/AttentionCard";
+import TeamLoadCard from "@/components/dashboard/TeamLoadCard";
+import {
+  Card,
+  CardTitle,
+  Meter,
+  StatusBar,
+  StatusLegend,
+} from "@/components/dashboard/parts";
 import {
   ResponsiveContainer,
   BarChart,
@@ -18,39 +40,36 @@ import {
   LineChart,
   Line,
   Legend,
-  Cell,
 } from "recharts";
 import {
   TrendUp,
-  CheckCircle,
-  Clock,
-  Stack,
-  Warning,
-  Target,
+  Lightning,
+  FolderSimple,
+  CalendarX,
   PauseCircle,
+  UsersThree,
 } from "@phosphor-icons/react";
 
-function Card({ children, className = "", ...rest }) {
-  return (
-    <div
-      className={`bg-white border border-slate-200 rounded-sm ${className}`}
-      {...rest}
-    >
-      {children}
-    </div>
-  );
-}
+// Legend text stays in text ink; the square swatch carries the series colour.
+const legendText = (value) => <span style={{ color: "#475569" }}>{value}</span>;
 
-function KpiCard({ label, value, suffix, icon: Icon, accent, testId, hint }) {
+const TOOLTIP_STYLE = {
+  background: "white",
+  border: "1px solid #E5E7EB",
+  borderRadius: 4,
+  fontSize: 12,
+};
+
+function KpiCard({ label, value, suffix, icon: Icon, accent, testId, hint, tone, children }) {
   return (
-    <Card className="p-5" data-testid={testId}>
+    <Card className="p-5 flex flex-col" data-testid={testId}>
       <div className="flex items-start justify-between">
         <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
           {label}
         </div>
         {Icon && (
           <div
-            className="w-7 h-7 rounded-sm flex items-center justify-center"
+            className="w-7 h-7 rounded-sm flex items-center justify-center shrink-0"
             style={{ backgroundColor: accent + "1A", color: accent }}
           >
             <Icon size={16} weight="duotone" />
@@ -59,13 +78,18 @@ function KpiCard({ label, value, suffix, icon: Icon, accent, testId, hint }) {
       </div>
       <div className="font-display font-black text-4xl tracking-tighter text-slate-900 mt-3">
         {value}
-        {suffix && (
-          <span className="text-base font-bold text-slate-400 ml-1">
-            {suffix}
-          </span>
-        )}
+        {suffix && <span className="text-base font-bold text-slate-400 ml-1">{suffix}</span>}
       </div>
-      {hint && <div className="text-xs text-slate-500 mt-1">{hint}</div>}
+      {children}
+      {hint && (
+        <div
+          className={`text-xs mt-1 ${
+            tone === "bad" ? "text-red-700 font-semibold" : tone === "good" ? "text-emerald-700" : "text-slate-500"
+          }`}
+        >
+          {hint}
+        </div>
+      )}
     </Card>
   );
 }
@@ -74,21 +98,65 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [quarterly, setQuarterly] = useState([]);
   const [velocity, setVelocity] = useState([]);
-  const [workload, setWorkload] = useState([]);
+  const [items, setItems] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [sprints, setSprints] = useState([]);
+  const [team, setTeam] = useState([]);
+  const today = isoToday();
 
   useEffect(() => {
     Promise.all([
       fetchSummary(),
       fetchQuarterly(),
       fetchSprintVelocity(),
-      fetchTeamWorkload(),
-    ]).then(([s, q, v, w]) => {
+      fetchBacklog(),
+      fetchProjects(),
+      fetchSprints(),
+      fetchTeam(),
+    ]).then(([s, q, v, b, p, sp, t]) => {
       setSummary(s);
       setQuarterly(q);
       setVelocity(v);
-      setWorkload(w);
+      setItems(b);
+      setProjects(p);
+      setSprints(sp);
+      setTeam(t);
     });
   }, []);
+
+  const projectMap = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p])), [projects]);
+  const teamMap = useMemo(() => Object.fromEntries(team.map((m) => [m.id, m])), [team]);
+
+  const activeSprint = useMemo(() => findActiveSprint(sprints, today), [sprints, today]);
+  const sprint = useMemo(
+    () => sprintProgress(activeSprint, items, today),
+    [activeSprint, items, today],
+  );
+  const projectRows = useMemo(
+    () => projectOverview(projects, items, team, today),
+    [projects, items, team, today],
+  );
+  const memberRows = useMemo(
+    () => memberLoad(team, items, activeSprint, today),
+    [team, items, activeSprint, today],
+  );
+  const attention = useMemo(
+    () => attentionItems(items, activeSprint, today),
+    [items, activeSprint, today],
+  );
+
+  const overdueItems = useMemo(() => items.filter((i) => isOverdue(i, today)), [items, today]);
+
+  const statusCounts = useMemo(() => {
+    if (!summary) return {};
+    return {
+      Backlog: summary.backlog,
+      "In Progress": summary.in_progress,
+      Pending: summary.pending,
+      "In Review": summary.in_review,
+      Done: summary.done_items,
+    };
+  }, [summary]);
 
   if (!summary) {
     return (
@@ -98,183 +166,151 @@ export default function Dashboard() {
     );
   }
 
+  const liveProjects = projectRows.filter((r) => r.id != null && r.health !== "No items");
+  const offTrack = liveProjects.filter((r) => r.health === "Off track").length;
+  const atRisk = liveProjects.filter((r) => r.health === "At risk").length;
+  const overdueSp = overdueItems.reduce((a, i) => a + (i.story_points || 0), 0);
+  const teamSprintSp = memberRows.reduce((a, r) => a + r.sprintSp, 0);
+  const teamCapacity = memberRows.reduce((a, r) => a + r.capacity, 0);
+  const teamLoad = teamCapacity ? Math.round((teamSprintSp / teamCapacity) * 100) : 0;
+  const overloaded = memberRows.filter((r) => r.flag === "Overloaded").length;
+
   const priorityRows = ["P1", "P2", "P3", "P4"].map((p) => ({
     priority: p,
     ...summary.by_priority[p],
     label: PRIORITY_COLORS[p].label,
   }));
 
-  const systemRows = Object.entries(summary.by_system).map(([k, v]) => ({
-    system: k,
-    ...v,
-  }));
+  const systemRows = Object.entries(summary.by_system)
+    .map(([k, v]) => ({ system: k, done_sp: v.done_sp, remaining_sp: v.sp - v.done_sp, sp: v.sp }))
+    .sort((a, b) => b.sp - a.sp);
 
   return (
     <div className="space-y-6" data-testid="dashboard-page">
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+      {/* Headline KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <KpiCard
-          label="Total Story Points"
-          value={summary.total_sp}
-          icon={Stack}
-          accent="#0033CC"
-          testId="kpi-total-sp"
-          hint={`${summary.total_items} items in backlog`}
-        />
-        <KpiCard
-          label="Completion"
+          label="Overall Delivery"
           value={summary.completion_pct}
           suffix="%"
           icon={TrendUp}
           accent="#059669"
           testId="kpi-completion"
-          hint={`${summary.done_sp} SP delivered`}
+          hint={`${summary.done_sp} of ${summary.total_sp} SP delivered`}
         />
         <KpiCard
-          label="Done"
-          value={summary.done_items}
-          icon={CheckCircle}
-          accent="#059669"
-          testId="kpi-done"
-          hint="Items completed"
-        />
-        <KpiCard
-          label="In Progress"
-          value={summary.in_progress}
-          icon={Clock}
+          label={sprint ? sprint.sprint.name : "Active Sprint"}
+          value={sprint ? sprint.donePct : "—"}
+          suffix={sprint ? "%" : null}
+          icon={Lightning}
           accent="#0033CC"
-          testId="kpi-in-progress"
-          hint="Currently building"
+          testId="kpi-sprint"
+          tone={sprint?.behind ? "bad" : sprint ? "good" : null}
+          hint={
+            sprint
+              ? sprint.behind
+                ? `Behind · day ${sprint.day}/${sprint.totalDays}`
+                : `On pace · day ${sprint.day}/${sprint.totalDays}`
+              : "No active sprint"
+          }
+        >
+          {sprint && (
+            <div className="mt-2">
+              <Meter
+                value={sprint.donePct}
+                marker={sprint.timePct}
+                title={`${sprint.doneSp}/${sprint.plannedSp} SP done · ${sprint.timePct}% of sprint elapsed (tick)`}
+              />
+            </div>
+          )}
+        </KpiCard>
+        <KpiCard
+          label="Projects at Risk"
+          value={offTrack + atRisk}
+          suffix={`/ ${liveProjects.length}`}
+          icon={FolderSimple}
+          accent="#D97706"
+          testId="kpi-projects-risk"
+          tone={offTrack ? "bad" : null}
+          hint={`${offTrack} off track · ${atRisk} at risk`}
         />
         <KpiCard
-          label="Pending"
+          label="Overdue Items"
+          value={overdueItems.length}
+          icon={CalendarX}
+          accent="#DC2626"
+          testId="kpi-overdue"
+          tone={overdueItems.length ? "bad" : "good"}
+          hint={overdueItems.length ? `${overdueSp} SP past target date` : "Nothing past target"}
+        />
+        <KpiCard
+          label="On Hold"
           value={summary.pending}
           icon={PauseCircle}
           accent="#EA580C"
           testId="kpi-pending"
-          hint="On hold"
+          hint="Items in Pending"
         />
         <KpiCard
-          label="In Review"
-          value={summary.in_review}
-          icon={Target}
+          label="Team Sprint Load"
+          value={activeSprint ? teamLoad : "—"}
+          suffix={activeSprint ? "%" : null}
+          icon={UsersThree}
           accent="#7C3AED"
-          testId="kpi-in-review"
-          hint="QA / Acceptance"
-        />
-        <KpiCard
-          label="Backlog"
-          value={summary.backlog}
-          icon={Warning}
-          accent="#D97706"
-          testId="kpi-backlog"
-          hint="Awaiting start"
+          testId="kpi-team-load"
+          tone={overloaded ? "bad" : null}
+          hint={
+            activeSprint
+              ? `${teamSprintSp}/${teamCapacity} SP · ${overloaded} overloaded`
+              : "No active sprint"
+          }
         />
       </div>
 
-      {/* Today's daily tasks per member */}
-      <TodayTasksCard />
+      {/* Portfolio status */}
+      <Card className="p-5" data-testid="card-portfolio">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+            Portfolio · {summary.total_items} items · {summary.total_sp} SP
+          </div>
+          <StatusLegend counts={statusCounts} />
+        </div>
+        <StatusBar counts={statusCounts} height="h-3" />
+      </Card>
 
-      {/* Quarterly + Velocity */}
+      {/* Projects */}
+      <ProjectOverviewCard rows={projectRows} />
+
+      {/* What to chase + today's updates */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+        <AttentionCard rows={attention} projectMap={projectMap} teamMap={teamMap} />
+        <div className="xl:col-span-2">
+          <TodayTasksCard />
+        </div>
+      </div>
+
+      {/* Members */}
+      <TeamLoadCard rows={memberRows} sprint={activeSprint} />
+
+      {/* Delivery trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-5" data-testid="card-quarterly">
-          <div className="flex items-end justify-between mb-4">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-                Quarterly Roadmap
-              </div>
-              <h2 className="font-display font-bold text-xl text-slate-900 mt-1">
-                Planned vs Delivered SP
-              </h2>
-            </div>
-          </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={quarterly}
-                margin={{ top: 5, right: 10, bottom: 0, left: -10 }}
-              >
-                <CartesianGrid stroke="#E5E7EB" strokeDasharray="2 2" vertical={false} />
-                <XAxis
-                  dataKey="quarter"
-                  stroke="#64748B"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis stroke="#64748B" fontSize={11} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    background: "white",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: 4,
-                    fontSize: 12,
-                  }}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-                  iconType="square"
-                />
-                <Bar
-                  dataKey="total_sp"
-                  fill="#0033CC"
-                  name="Planned SP"
-                  radius={[2, 2, 0, 0]}
-                />
-                <Bar
-                  dataKey="done_sp"
-                  fill="#059669"
-                  name="Done SP"
-                  radius={[2, 2, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
         <Card className="p-5" data-testid="card-velocity">
-          <div className="flex items-end justify-between mb-4">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-                Sprint Velocity
-              </div>
-              <h2 className="font-display font-bold text-xl text-slate-900 mt-1">
-                Per-Sprint Output
-              </h2>
-            </div>
-          </div>
-          <div className="h-64">
+          <CardTitle eyebrow="Sprint Velocity" title="Planned vs Completed SP" />
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={velocity}
-                margin={{ top: 5, right: 10, bottom: 0, left: -10 }}
-              >
-                <CartesianGrid stroke="#E5E7EB" strokeDasharray="2 2" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  stroke="#64748B"
-                  fontSize={10}
-                  tickLine={false}
-                />
-                <YAxis stroke="#64748B" fontSize={11} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    background: "white",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: 4,
-                    fontSize: 12,
-                  }}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-                  iconType="square"
-                />
+              <LineChart data={velocity} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
+                <CartesianGrid stroke="#EEF0F3" vertical={false} />
+                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="square" formatter={legendText} />
                 <Line
                   type="monotone"
                   dataKey="planned_sp"
                   stroke="#0033CC"
                   strokeWidth={2}
                   name="Planned"
-                  dot={{ r: 3 }}
+                  dot={{ r: 4 }}
                 />
                 <Line
                   type="monotone"
@@ -282,9 +318,31 @@ export default function Dashboard() {
                   stroke="#059669"
                   strokeWidth={2}
                   name="Completed"
-                  dot={{ r: 3 }}
+                  dot={{ r: 4 }}
                 />
               </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card className="p-5" data-testid="card-quarterly">
+          <CardTitle eyebrow="Quarterly Roadmap" title="Planned vs Delivered SP" />
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={quarterly}
+                margin={{ top: 5, right: 10, bottom: 0, left: -10 }}
+                barGap={2}
+                maxBarSize={32}
+              >
+                <CartesianGrid stroke="#EEF0F3" vertical={false} />
+                <XAxis dataKey="quarter" stroke="#94A3B8" fontSize={11} tickLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#F1F5F9" }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="square" formatter={legendText} />
+                <Bar dataKey="total_sp" fill="#0033CC" name="Planned SP" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="done_sp" fill="#059669" name="Delivered SP" radius={[4, 4, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
@@ -293,22 +351,13 @@ export default function Dashboard() {
       {/* Priority & System */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-5" data-testid="card-priority">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-            By Priority
-          </div>
-          <h2 className="font-display font-bold text-xl text-slate-900 mt-1 mb-4">
-            Critical Path Distribution
-          </h2>
+          <CardTitle eyebrow="By Priority" title="Critical Path Delivery" />
           <div className="space-y-3">
             {priorityRows.map((row) => {
               const c = PRIORITY_COLORS[row.priority];
-              const pct =
-                row.sp > 0 ? Math.round((row.done_sp / row.sp) * 100) : 0;
+              const pct = row.sp > 0 ? Math.round((row.done_sp / row.sp) * 100) : 0;
               return (
-                <div
-                  key={row.priority}
-                  data-testid={`priority-row-${row.priority}`}
-                >
+                <div key={row.priority} data-testid={`priority-row-${row.priority}`}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">
                       <span
@@ -317,26 +366,14 @@ export default function Dashboard() {
                       >
                         {row.priority}
                       </span>
-                      <span className="text-sm text-slate-700">
-                        {row.label}
-                      </span>
-                      <span className="text-xs text-slate-500">
-                        · {row.count} items
-                      </span>
+                      <span className="text-sm text-slate-700">{row.label}</span>
+                      <span className="text-xs text-slate-500">· {row.count} items</span>
                     </div>
                     <div className="text-sm font-mono font-semibold text-slate-900">
-                      {row.done_sp}/{row.sp} SP
+                      {row.done_sp}/{row.sp} SP · {pct}%
                     </div>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-sm h-2 overflow-hidden">
-                    <div
-                      className="h-full transition-all"
-                      style={{
-                        width: `${pct}%`,
-                        backgroundColor: c.dot,
-                      }}
-                    />
-                  </div>
+                  <Meter value={pct} color={c.dot} title={`${pct}% delivered`} />
                 </div>
               );
             })}
@@ -344,135 +381,51 @@ export default function Dashboard() {
         </Card>
 
         <Card className="p-5" data-testid="card-system">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-            By System
-          </div>
-          <h2 className="font-display font-bold text-xl text-slate-900 mt-1 mb-4">
-            Effort per Product Area
-          </h2>
-          <div className="h-64">
+          <CardTitle eyebrow="By System" title="Delivered vs Remaining per Area" />
+          <div style={{ height: Math.max(systemRows.length * 36 + 40, 160) }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={systemRows}
                 layout="vertical"
                 margin={{ top: 0, right: 10, bottom: 0, left: 0 }}
               >
-                <CartesianGrid stroke="#E5E7EB" strokeDasharray="2 2" horizontal={false} />
-                <XAxis type="number" stroke="#64748B" fontSize={11} tickLine={false} />
+                <CartesianGrid stroke="#EEF0F3" horizontal={false} />
+                <XAxis type="number" stroke="#94A3B8" fontSize={11} tickLine={false} />
                 <YAxis
                   type="category"
                   dataKey="system"
-                  stroke="#64748B"
+                  stroke="#94A3B8"
                   fontSize={11}
                   tickLine={false}
+                  axisLine={false}
                   width={80}
                 />
-                <Tooltip
-                  contentStyle={{
-                    background: "white",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: 4,
-                    fontSize: 12,
-                  }}
+                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#F1F5F9" }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="square" formatter={legendText} />
+                <Bar
+                  dataKey="done_sp"
+                  stackId="sp"
+                  fill="#059669"
+                  name="Delivered SP"
+                  stroke="#FFFFFF"
+                  strokeWidth={2}
+                  barSize={18}
                 />
-                <Bar dataKey="sp" name="Total SP" radius={[0, 2, 2, 0]}>
-                  {systemRows.map((row) => (
-                    <Cell
-                      key={row.system}
-                      fill={SYSTEM_COLORS[row.system]?.text || "#0033CC"}
-                    />
-                  ))}
-                </Bar>
+                <Bar
+                  dataKey="remaining_sp"
+                  stackId="sp"
+                  fill="#CBD5E1"
+                  name="Remaining SP"
+                  stroke="#FFFFFF"
+                  strokeWidth={2}
+                  radius={[0, 4, 4, 0]}
+                  barSize={18}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
       </div>
-
-      {/* Team workload */}
-      <Card className="p-5" data-testid="card-workload">
-        <div className="flex items-end justify-between mb-4">
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-              Team Effectiveness
-            </div>
-            <h2 className="font-display font-bold text-xl text-slate-900 mt-1">
-              Workload & Delivery per Engineer
-            </h2>
-          </div>
-          <div className="text-xs text-slate-500">
-            Sorted by assigned story points
-          </div>
-        </div>
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-200 text-[10px] font-mono uppercase tracking-widest text-slate-500">
-              <th className="text-left py-2 font-semibold">Member</th>
-              <th className="text-left py-2 font-semibold">Role</th>
-              <th className="text-right py-2 font-semibold">Items</th>
-              <th className="text-right py-2 font-semibold">In Prog</th>
-              <th className="text-right py-2 font-semibold">Done SP</th>
-              <th className="text-left py-2 font-semibold pl-4 w-2/5">
-                Utilization
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {workload.map((w) => (
-              <tr
-                key={w.id}
-                className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                data-testid={`workload-row-${w.id}`}
-              >
-                <td className="py-3">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-7 h-7 rounded-sm flex items-center justify-center text-xs font-bold text-white font-mono"
-                      style={{ backgroundColor: w.avatar_color || "#0033CC" }}
-                    >
-                      {w.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="text-sm font-semibold text-slate-900">
-                      {w.name}
-                    </span>
-                  </div>
-                </td>
-                <td className="py-3 text-sm text-slate-600">{w.role}</td>
-                <td className="py-3 text-right font-mono text-sm">
-                  {w.dev_items}
-                </td>
-                <td className="py-3 text-right font-mono text-sm">
-                  {w.in_progress}
-                </td>
-                <td className="py-3 text-right font-mono text-sm font-semibold">
-                  {w.done_sp}/{w.assigned_sp}
-                </td>
-                <td className="py-3 pl-4">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-slate-100 rounded-sm h-2 overflow-hidden relative">
-                      <div
-                        className="h-full"
-                        style={{
-                          width: `${Math.min(w.utilization_pct, 100)}%`,
-                          backgroundColor:
-                            w.utilization_pct > 100
-                              ? "#DC2626"
-                              : w.utilization_pct > 80
-                                ? "#D97706"
-                                : "#0033CC",
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs font-mono font-semibold w-14 text-right">
-                      {w.utilization_pct}%
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
     </div>
   );
 }
