@@ -6,6 +6,7 @@ public sealed class PhaseSummaryDto
     public int Items { get; set; }
     public int TotalSp { get; set; }
     public int DoneSp { get; set; }
+    public int Pending { get; set; }
     public int InProgress { get; set; }
     public int InReview { get; set; }
     public int Backlog { get; set; }
@@ -36,6 +37,7 @@ public sealed class DashboardSummaryDto
     public int TotalSp { get; set; }
     public int DoneItems { get; set; }
     public int DoneSp { get; set; }
+    public int Pending { get; set; }
     public int InProgress { get; set; }
     public int InReview { get; set; }
     public int Backlog { get; set; }

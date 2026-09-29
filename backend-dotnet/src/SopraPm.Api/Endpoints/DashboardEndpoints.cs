@@ -17,6 +17,7 @@ public static class DashboardEndpoints
                     ISNULL(SUM(StoryPoints), 0) AS TotalSp,
                     SUM(CASE WHEN [Status]='Done' THEN 1 ELSE 0 END) AS DoneItems,
                     ISNULL(SUM(CASE WHEN [Status]='Done' THEN StoryPoints ELSE 0 END), 0) AS DoneSp,
+                    SUM(CASE WHEN [Status]='Pending'     THEN 1 ELSE 0 END) AS Pending,
                     SUM(CASE WHEN [Status]='In Progress' THEN 1 ELSE 0 END) AS InProgress,
                     SUM(CASE WHEN [Status]='In Review'   THEN 1 ELSE 0 END) AS InReview,
                     SUM(CASE WHEN [Status]='Backlog'     THEN 1 ELSE 0 END) AS Backlog
@@ -56,6 +57,7 @@ public static class DashboardEndpoints
                 TotalSp = totals.TotalSp,
                 DoneItems = totals.DoneItems,
                 DoneSp = totals.DoneSp,
+                Pending = totals.Pending,
                 InProgress = totals.InProgress,
                 InReview = totals.InReview,
                 Backlog = totals.Backlog,
@@ -191,6 +193,7 @@ public static class DashboardEndpoints
         public int TotalSp { get; init; }
         public int DoneItems { get; init; }
         public int DoneSp { get; init; }
+        public int Pending { get; init; }
         public int InProgress { get; init; }
         public int InReview { get; init; }
         public int Backlog { get; init; }

@@ -101,6 +101,9 @@ public static class ProjectEndpoints
                         phase.DoneSp += item.StoryPoints;
                         phase.Done += 1;
                         break;
+                    case "Pending":
+                        phase.Pending += 1;
+                        break;
                     case "In Progress":
                         phase.InProgress += 1;
                         break;

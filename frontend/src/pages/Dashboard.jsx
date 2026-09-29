@@ -26,6 +26,7 @@ import {
   Stack,
   Warning,
   Target,
+  PauseCircle,
 } from "@phosphor-icons/react";
 
 function Card({ children, className = "", ...rest }) {
@@ -110,7 +111,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6" data-testid="dashboard-page">
       {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <KpiCard
           label="Total Story Points"
           value={summary.total_sp}
@@ -135,6 +136,14 @@ export default function Dashboard() {
           accent="#059669"
           testId="kpi-done"
           hint="Items completed"
+        />
+        <KpiCard
+          label="Pending"
+          value={summary.pending}
+          icon={PauseCircle}
+          accent="#EA580C"
+          testId="kpi-pending"
+          hint="On hold / waiting"
         />
         <KpiCard
           label="In Progress"
