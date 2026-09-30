@@ -258,6 +258,28 @@ public sealed class DailyTaskDto
     public string? AssigneeColor { get; set; }
 }
 
+public sealed class ShippedItemDto
+{
+    public int Id { get; set; }
+    public string WbRef { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? Status { get; set; }
+    public int StoryPoints { get; set; }
+    public string? ActualDate { get; set; }
+    public int? ProjectId { get; set; }
+    public string ProjectName { get; set; } = "Unassigned project";
+    public string? ProjectCode { get; set; }
+    public string? ProjectColor { get; set; }
+}
+
+public sealed class WeeklyInsightDto
+{
+    public string From { get; set; } = "";
+    public string To { get; set; } = "";
+    public List<DailyTaskDto> Tasks { get; set; } = new();
+    public List<ShippedItemDto> ShippedItems { get; set; } = new();
+}
+
 public sealed class CommentCreate
 {
     public string? Text { get; set; }

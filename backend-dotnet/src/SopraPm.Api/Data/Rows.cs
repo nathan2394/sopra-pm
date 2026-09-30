@@ -130,3 +130,18 @@ public sealed class DailyTaskRow
     public string? AssigneeRole { get; init; }
     public string? AssigneeColor { get; init; }
 }
+
+/// <summary>A backlog item that reached its delivery date inside a period.</summary>
+public sealed class ShippedItemRow
+{
+    public int Id { get; init; }
+    public string WbRef { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string? Status { get; init; }
+    public int StoryPoints { get; init; }
+    public DateTime? ActualDate { get; init; }
+    public int? ProjectId { get; init; }
+    public string? ProjectName { get; init; }
+    public string? ProjectCode { get; init; }
+    public string? ProjectColor { get; init; }
+}

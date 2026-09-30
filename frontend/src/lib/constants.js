@@ -42,8 +42,15 @@ export const TASK_STATUS_COLORS = {
   Incomplete: { bg: "#DBEAFE", text: "#1E40AF", dot: "#0033CC" },
   Complete: { bg: "#D1FAE5", text: "#065F46", dot: "#059669" },
 };
-/** Rows written before tasks had their own statuses may still say "Done" etc. */
-export const taskStatus = (s) => (s === "Complete" || s === "Done" ? "Complete" : "Incomplete");
+/**
+ * Rows written before tasks had their own statuses may still say "Done",
+ * "Completed" or any casing of those — the live table currently holds
+ * "Completed" and "In Progress". Match the done-ish spellings loosely so a
+ * finished task is never miscounted as outstanding.
+ */
+const DONE_SPELLINGS = new Set(["complete", "completed", "done", "closed", "selesai"]);
+export const taskStatus = (s) =>
+  DONE_SPELLINGS.has(String(s || "").trim().toLowerCase()) ? "Complete" : "Incomplete";
 export const ROLES = [
   "Backend Dev",
   "QA",

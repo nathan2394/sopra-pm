@@ -120,6 +120,20 @@ public static class Mappers
         AssigneeColor = r.AssigneeColor,
     };
 
+    public static ShippedItemDto ToDto(this ShippedItemRow r) => new()
+    {
+        Id = r.Id,
+        WbRef = r.WbRef,
+        Title = r.Title,
+        Status = r.Status,
+        StoryPoints = r.StoryPoints,
+        ActualDate = IsoDate(r.ActualDate),
+        ProjectId = r.ProjectId,
+        ProjectName = string.IsNullOrWhiteSpace(r.ProjectName) ? "Unassigned project" : r.ProjectName,
+        ProjectCode = r.ProjectCode,
+        ProjectColor = r.ProjectColor,
+    };
+
     public static ActivityDto ToDto(this ActivityRow r) => new()
     {
         Id = r.Id,

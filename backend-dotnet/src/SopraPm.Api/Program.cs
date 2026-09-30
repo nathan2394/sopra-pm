@@ -113,6 +113,10 @@ app.MapGet("/", () => swaggerEnabled
 
 // /api/ and /api/health stay open; /api/auth/login is open, /api/auth/me is not.
 app.MapPublicEndpoints(ApiVersion);
+
+// The management report is readable without a token so it can be shared by
+// link. Its own group, so it never inherits the bearer filter below.
+app.MapGroup("/api/public").MapPublicReportEndpoints();
 app.MapAuthEndpoints();
 
 // Every other /api/* route requires a valid bearer token.
@@ -125,6 +129,7 @@ api.MapBacklogEndpoints();
 api.MapActivityEndpoints();
 api.MapAttachmentEndpoints();
 api.MapTaskEndpoints();
+api.MapInsightEndpoints();
 api.MapDashboardEndpoints();
 
 var logger = app.Services.GetRequiredService<ILogger<Program>>();

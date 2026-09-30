@@ -4,7 +4,8 @@
 -- backlog statuses (Backlog, In Progress, Pending, In Review, Done) stay
 -- on dbo.BacklogItems only.
 --
---   * existing rows: 'Done' -> 'Complete', anything else -> 'Incomplete'
+--   * existing rows: done-ish spellings ('Done', 'Complete', 'Completed',
+--     'Closed', any casing) -> 'Complete'; anything else -> 'Incomplete'
 --   * the column default becomes 'Incomplete'
 --   * a CHECK constraint keeps it to the two values
 -- Safe to re-run.
@@ -15,8 +16,15 @@ GO
 SET QUOTED_IDENTIFIER ON;
 GO
 
+-- The live table holds 'Completed' (with the d) and 'In Progress'. Matching only
+-- 'Done'/'Complete' would sweep every finished task into 'Incomplete', so the
+-- done-ish spellings are matched loosely, trimmed and case-insensitively.
 UPDATE dbo.Tasks
-   SET [Status] = CASE WHEN [Status] IN ('Done', 'Complete') THEN 'Complete' ELSE 'Incomplete' END
+   SET [Status] = CASE
+                    WHEN LOWER(LTRIM(RTRIM([Status]))) IN ('done', 'complete', 'completed', 'closed')
+                    THEN 'Complete'
+                    ELSE 'Incomplete'
+                  END
  WHERE [Status] IS NULL OR [Status] NOT IN ('Complete', 'Incomplete');
 GO
 

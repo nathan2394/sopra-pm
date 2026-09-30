@@ -115,6 +115,10 @@ export const fetchAttachmentObjectUrl = (attachmentId) =>
 export const deleteAttachment = (attachmentId) =>
   client.delete(`/attachments/${attachmentId}`).then((r) => r.data);
 
+// Management roll-up for a period
+export const fetchWeeklyInsight = (from, to) =>
+  client.get("/insights/weekly", { params: { from, to } }).then((r) => r.data);
+
 // Tasks (the work items under a backlog entry)
 export const fetchDailyTasks = (params = {}) =>
   client.get("/tasks/daily", { params }).then((r) => r.data);

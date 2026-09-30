@@ -15,9 +15,17 @@ public static class TaskEndpoints
     public const string Complete = "Complete";
     public const string Incomplete = "Incomplete";
 
-    /// <summary>Rows written before migration 007 may still say "Done", "In Progress", ...</summary>
+    /// <summary>
+    /// Rows written before migration 007 may still say "Done", "Completed",
+    /// "In Progress", ... The live table uses "Completed", so the done-ish
+    /// spellings are matched loosely rather than by exact value — otherwise a
+    /// finished task reads back as outstanding everywhere it is counted.
+    /// </summary>
+    private static readonly HashSet<string> DoneSpellings =
+        new(StringComparer.OrdinalIgnoreCase) { "Complete", "Completed", "Done", "Closed", "Selesai" };
+
     public static string Normalize(string? status) =>
-        status is Complete or "Done" ? Complete : Incomplete;
+        status is not null && DoneSpellings.Contains(status.Trim()) ? Complete : Incomplete;
 
     private static string? Validate(string? status)
     {
