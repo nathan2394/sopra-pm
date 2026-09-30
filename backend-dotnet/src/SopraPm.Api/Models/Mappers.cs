@@ -1,4 +1,5 @@
 using SopraPm.Api.Data;
+using SopraPm.Api.Endpoints;
 using static SopraPm.Api.Data.RowHelpers;
 
 namespace SopraPm.Api.Models;
@@ -90,7 +91,7 @@ public static class Mappers
         Title = r.Title,
         BacklogItemId = r.BacklogItemId,
         AssigneeId = r.AssigneeId,
-        Status = r.Status ?? "In Progress",
+        Status = TaskEndpoints.Normalize(r.Status),
         Blocker = r.Blocker,
         CreatedAt = Iso(r.CreatedAt),
         UpdatedAt = Iso(r.UpdatedAt),
@@ -102,7 +103,7 @@ public static class Mappers
         Title = r.Title,
         BacklogItemId = r.BacklogItemId,
         AssigneeId = r.AssigneeId,
-        Status = r.Status ?? "In Progress",
+        Status = TaskEndpoints.Normalize(r.Status),
         Blocker = r.Blocker,
         CreatedAt = Iso(r.CreatedAt),
         UpdatedAt = Iso(r.UpdatedAt),

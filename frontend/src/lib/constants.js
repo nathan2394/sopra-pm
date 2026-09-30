@@ -35,6 +35,15 @@ export const SYSTEMS = [
 
 export const PRIORITIES = ["P1", "P2", "P3", "P4"];
 export const STATUSES = ["Backlog", "In Progress", "Pending", "In Review", "Done"];
+// Tasks (the pieces of work under a backlog item) are either done or not;
+// the five statuses above belong to backlog items only.
+export const TASK_STATUSES = ["Incomplete", "Complete"];
+export const TASK_STATUS_COLORS = {
+  Incomplete: { bg: "#DBEAFE", text: "#1E40AF", dot: "#0033CC" },
+  Complete: { bg: "#D1FAE5", text: "#065F46", dot: "#059669" },
+};
+/** Rows written before tasks had their own statuses may still say "Done" etc. */
+export const taskStatus = (s) => (s === "Complete" || s === "Done" ? "Complete" : "Incomplete");
 export const ROLES = [
   "Backend Dev",
   "QA",

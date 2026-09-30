@@ -11,6 +11,22 @@ namespace SopraPm.Api.Endpoints;
 /// </summary>
 public static class TaskEndpoints
 {
+    /// <summary>A task is either done or not; the backlog's five statuses are for items.</summary>
+    public const string Complete = "Complete";
+    public const string Incomplete = "Incomplete";
+
+    /// <summary>Rows written before migration 007 may still say "Done", "In Progress", ...</summary>
+    public static string Normalize(string? status) =>
+        status is Complete or "Done" ? Complete : Incomplete;
+
+    private static string? Validate(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return null;
+        return status is Complete or Incomplete
+            ? status
+            : throw ApiException.BadRequest("Task status must be 'Complete' or 'Incomplete'");
+    }
+
     public static RouteGroupBuilder MapTaskEndpoints(this RouteGroupBuilder api)
     {
         // One row per task, already carrying its backlog item, project and
@@ -94,7 +110,7 @@ public static class TaskEndpoints
                 VALUES (@p0, @p1, @p2, @p3, @p4)
                 """,
                 SqlParams.Positional(title, itemId, data.AssigneeId,
-                    string.IsNullOrWhiteSpace(data.Status) ? "In Progress" : data.Status,
+                    Validate(data.Status) ?? Incomplete,
                     string.IsNullOrWhiteSpace(data.Blocker) ? null : data.Blocker));
 
             return (await FetchTaskAsync(db, newId)).ToDto();
@@ -119,7 +135,7 @@ public static class TaskEndpoints
                 Set("Title", title);
             }
             Set("AssigneeId", data.AssigneeId);
-            Set("[Status]", data.Status);
+            Set("[Status]", Validate(data.Status));
 
             // Blocker is the one field you clear by sending an empty string.
             if (data.Blocker is not null)

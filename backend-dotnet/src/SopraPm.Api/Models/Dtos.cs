@@ -213,7 +213,7 @@ public sealed class TaskDto
     public string Title { get; set; } = "";
     public int BacklogItemId { get; set; }
     public int AssigneeId { get; set; }
-    public string Status { get; set; } = "In Progress";
+    public string Status { get; set; } = "Incomplete";
     public string? Blocker { get; set; }
     public string? CreatedAt { get; set; }
     public string? UpdatedAt { get; set; }
@@ -241,7 +241,7 @@ public sealed class DailyTaskDto
     public string Title { get; set; } = "";
     public int BacklogItemId { get; set; }
     public int AssigneeId { get; set; }
-    public string Status { get; set; } = "In Progress";
+    public string Status { get; set; } = "Incomplete";
     public string? Blocker { get; set; }
     public string? CreatedAt { get; set; }
     public string? UpdatedAt { get; set; }

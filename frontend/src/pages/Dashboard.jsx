@@ -267,6 +267,14 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Who hasn't registered today's tasks + what to chase */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+        <div className="xl:col-span-2">
+          <TodayTasksCard />
+        </div>
+        <AttentionCard rows={attention} projectMap={projectMap} teamMap={teamMap} />
+      </div>
+
       {/* Portfolio status */}
       <Card className="p-5" data-testid="card-portfolio">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
@@ -280,14 +288,6 @@ export default function Dashboard() {
 
       {/* Projects */}
       <ProjectOverviewCard rows={projectRows} />
-
-      {/* What to chase + today's updates */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-        <AttentionCard rows={attention} projectMap={projectMap} teamMap={teamMap} />
-        <div className="xl:col-span-2">
-          <TodayTasksCard />
-        </div>
-      </div>
 
       {/* Members */}
       <TeamLoadCard rows={memberRows} sprint={activeSprint} />
