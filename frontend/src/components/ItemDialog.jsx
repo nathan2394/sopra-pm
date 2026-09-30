@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import ActivityPanel from "@/components/ActivityPanel";
-import { STATUSES, PRIORITIES, SYSTEMS, PRIORITY_COLORS } from "@/lib/constants";
+import { STATUSES, PRIORITIES, SYSTEMS, PRIORITY_COLORS, taskStatus } from "@/lib/constants";
+import TaskStatusToggle from "@/components/TaskStatusToggle";
 import {
   createTask,
   deleteAttachment,
@@ -467,14 +468,14 @@ export default function ItemDialog({
 function TaskTable({ itemId, team }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [draft, setDraft] = useState({ title: "", assignee_id: "", status: "In Progress" });
+  const [draft, setDraft] = useState({ title: "", assignee_id: "", status: "Incomplete" });
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     fetchTasks(itemId)
-      .then((list) => !cancelled && setTasks(list))
+      .then((list) => !cancelled && setTasks(list.map((t) => ({ ...t, status: taskStatus(t.status) }))))
       .catch(() => !cancelled && setTasks([]))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -493,8 +494,8 @@ function TaskTable({ itemId, team }) {
         assignee_id: Number(draft.assignee_id),
         status: draft.status,
       });
-      setTasks((prev) => [...prev, created]);
-      setDraft({ title: "", assignee_id: draft.assignee_id, status: "In Progress" });
+      setTasks((prev) => [...prev, { ...created, status: taskStatus(created.status) }]);
+      setDraft({ title: "", assignee_id: draft.assignee_id, status: "Incomplete" });
       toast.success("Task added");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Could not add task");
@@ -508,7 +509,9 @@ function TaskTable({ itemId, team }) {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...changes } : t)));
     try {
       const updated = await updateTask(task.id, changes);
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...updated, status: taskStatus(updated.status) } : t)),
+      );
     } catch (err) {
       setTasks(previous);
       toast.error(err?.response?.data?.detail || "Could not save task");
@@ -583,18 +586,14 @@ function TaskTable({ itemId, team }) {
             </option>
           ))}
         </select>
-        <select
-          value={draft.status}
-          onChange={(e) => setDraft({ ...draft, status: e.target.value })}
-          className="col-span-2 rounded-sm h-8 text-xs border border-slate-200 bg-white px-2"
-          data-testid="task-new-status"
-        >
-          {STATUSES.map((st) => (
-            <option key={st} value={st}>
-              {st}
-            </option>
-          ))}
-        </select>
+        <div className="col-span-2">
+          <TaskStatusToggle
+            status={draft.status}
+            onChange={(status) => setDraft({ ...draft, status })}
+            className="w-full h-8"
+            testId="task-new-status"
+          />
+        </div>
         <div className="col-span-3 flex justify-end">
           <Button
             type="button"
@@ -673,18 +672,14 @@ function TaskRowEditor({ task, memberOptions, onPatch, onRemove }) {
           </option>
         ))}
       </select>
-      <select
-        value={task.status}
-        onChange={(e) => onPatch(task, { status: e.target.value })}
-        className="col-span-2 rounded-sm h-8 text-xs border border-slate-200 bg-white px-2"
-        data-testid={`task-status-${task.id}`}
-      >
-        {STATUSES.map((st) => (
-          <option key={st} value={st}>
-            {st}
-          </option>
-        ))}
-      </select>
+      <div className="col-span-2">
+        <TaskStatusToggle
+          status={task.status}
+          onChange={(status) => onPatch(task, { status })}
+          className="w-full h-8"
+          testId={`task-status-${task.id}`}
+        />
+      </div>
       <div className="col-span-2 relative">
         {blocker ? (
           <Warning

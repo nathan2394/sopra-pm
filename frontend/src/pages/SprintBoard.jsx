@@ -3,13 +3,16 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 import {
   fetchBacklog,
+  fetchDailyTasks,
   fetchTeam,
   fetchSprints,
   fetchProjects,
   updateBacklogItem,
 } from "@/lib/api";
 import ItemDialog from "@/components/ItemDialog";
-import { STATUSES } from "@/lib/constants";
+import { STATUSES, taskStatus } from "@/lib/constants";
+import { isoToday } from "@/lib/dailyReport";
+import { daysBetween } from "@/lib/insights";
 import { PriorityBadge, SystemBadge } from "@/components/Badges";
 import { getActorId } from "@/lib/currentUser";
 import {
@@ -19,7 +22,84 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DotsSixVertical } from "@phosphor-icons/react";
+import { DotsSixVertical, Warning, ListChecks } from "@phosphor-icons/react";
+
+/** An open item with no task activity for this many days reads as stalled. */
+const IDLE_DAYS = 3;
+
+/**
+ * Task roll-up per backlog item: how many, how many complete, how many
+ * blocked, and how many days since any of them was created or touched.
+ */
+function taskStatsByItem(tasks, today) {
+  const map = new Map();
+  tasks.forEach((t) => {
+    if (!map.has(t.backlog_item_id)) {
+      map.set(t.backlog_item_id, { total: 0, complete: 0, blocked: 0, last: "" });
+    }
+    const s = map.get(t.backlog_item_id);
+    s.total += 1;
+    if (taskStatus(t.status) === "Complete") s.complete += 1;
+    if (t.blocker) s.blocked += 1;
+    const touched = (t.updated_at || t.created_at || "").slice(0, 10);
+    if (touched > s.last) s.last = touched;
+  });
+  map.forEach((s) => (s.idleDays = s.last ? daysBetween(s.last, today) : null));
+  return map;
+}
+
+/** One line on the card: task progress and how recently anyone worked on it. */
+function TaskActivity({ stats, done }) {
+  if (!stats) {
+    return done ? null : (
+      <div
+        className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-1 text-[10px] font-mono text-slate-400"
+        data-testid="card-no-tasks"
+      >
+        <ListChecks size={11} />
+        No tasks registered
+      </div>
+    );
+  }
+  const pct = Math.round((stats.complete / stats.total) * 100);
+  const idle = !done && stats.idleDays >= IDLE_DAYS;
+  const activity =
+    stats.idleDays === 0 ? "Active today" : stats.idleDays === 1 ? "Yesterday" : `${stats.idleDays}d ago`;
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100" data-testid="card-task-activity">
+      <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+        <span
+          className="flex items-center gap-1 text-slate-600 whitespace-nowrap"
+          title={`${pct}% of tasks complete`}
+        >
+          <ListChecks size={11} />
+          <b className="text-slate-900">{stats.complete}/{stats.total}</b> tasks
+          {stats.blocked > 0 && (
+            <span className="flex items-center gap-0.5 text-amber-700 ml-1" title="Tasks with a blocker">
+              <Warning size={11} />
+              {stats.blocked}
+            </span>
+          )}
+        </span>
+        <span
+          className={`rounded-sm px-1 whitespace-nowrap ${
+            idle
+              ? "bg-amber-50 text-amber-800 font-bold"
+              : stats.idleDays === 0
+                ? "text-emerald-700 font-semibold"
+                : "text-slate-500"
+          }`}
+          title={`Last task activity ${stats.last}`}
+        >
+          {idle ? `Idle ${stats.idleDays}d` : activity}
+        </span>
+      </div>
+      <div className="mt-1 h-1 bg-slate-100 rounded-sm overflow-hidden">
+        <div className="h-full bg-emerald-600" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 const COLUMN_META = {
   Backlog: { tint: "#F1F5F9", accent: "#64748B" },
@@ -35,6 +115,7 @@ export default function SprintBoard() {
   const [sprints, setSprints] = useState([]);
   const [projects, setProjects] = useState([]);
   const [selectedSprint, setSelectedSprint] = useState(null);
+  const [tasks, setTasks] = useState([]);
   // Edit a card in place — no detour through the Backlog page.
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
@@ -84,12 +165,16 @@ export default function SprintBoard() {
   };
 
   const load = async () => {
-    const [b, t, s, p] = await Promise.all([
+    const [b, t, s, p, tk] = await Promise.all([
       fetchBacklog(),
       fetchTeam(),
       fetchSprints(),
       fetchProjects(),
+      // Every task, not one day's: the card shows total progress and how long
+      // the item has been quiet. The board still loads if this call fails.
+      fetchDailyTasks().catch(() => []),
     ]);
+    setTasks(tk);
     setItems(b);
     setTeam(t);
     setSprints(s);
@@ -130,6 +215,30 @@ export default function SprintBoard() {
   }, [sprintItems]);
 
   const currentSprint = sprints.find((s) => s.id === selectedSprint);
+
+  const today = isoToday();
+  const taskStats = useMemo(() => taskStatsByItem(tasks, today), [tasks, today]);
+
+  // Sprint-wide: task progress and which open items look stalled.
+  const sprintActivity = useMemo(() => {
+    let total = 0;
+    let complete = 0;
+    let activeToday = 0;
+    let idle = 0;
+    let noTasks = 0;
+    sprintItems.forEach((i) => {
+      const s = taskStats.get(i.id);
+      if (s) {
+        total += s.total;
+        complete += s.complete;
+      }
+      if (i.status === "Done") return;
+      if (!s) noTasks += 1;
+      else if (s.idleDays === 0) activeToday += 1;
+      else if (s.idleDays >= IDLE_DAYS) idle += 1;
+    });
+    return { total, complete, activeToday, idle, noTasks };
+  }, [sprintItems, taskStats]);
 
   const onDragEnd = async (result) => {
     if (!result.destination) return;
@@ -209,6 +318,32 @@ export default function SprintBoard() {
         )}
       </div>
 
+      {/* Task activity across the sprint */}
+      {currentSprint && (
+        <div
+          className="flex items-center gap-x-5 gap-y-2 flex-wrap text-xs text-slate-600 px-1"
+          data-testid="sprint-activity"
+        >
+          <span className="flex items-center gap-1.5">
+            <ListChecks size={14} className="text-slate-400" />
+            <b className="font-mono text-slate-900">
+              {sprintActivity.complete}/{sprintActivity.total}
+            </b>
+            tasks complete
+          </span>
+          <span className="text-emerald-700">
+            <b className="font-mono">{sprintActivity.activeToday}</b> items active today
+          </span>
+          <span className={sprintActivity.idle ? "text-amber-800 font-semibold" : ""}>
+            <b className="font-mono">{sprintActivity.idle}</b> idle {IDLE_DAYS}+ days
+          </span>
+          <span className={sprintActivity.noTasks ? "text-slate-700" : ""}>
+            <b className="font-mono">{sprintActivity.noTasks}</b> open{" "}
+            {sprintActivity.noTasks === 1 ? "item" : "items"} without tasks
+          </span>
+        </div>
+      )}
+
       {/* Kanban */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -216,6 +351,13 @@ export default function SprintBoard() {
             const meta = COLUMN_META[status];
             const colItems = columns[status] || [];
             const totalSp = colItems.reduce((a, b) => a + b.story_points, 0);
+            const colTasks = colItems.reduce(
+              (a, b) => {
+                const s = taskStats.get(b.id);
+                return s ? [a[0] + s.complete, a[1] + s.total] : a;
+              },
+              [0, 0],
+            );
             return (
               <Droppable droppableId={status} key={status}>
                 {(provided, snapshot) => (
@@ -229,10 +371,11 @@ export default function SprintBoard() {
                     data-testid={`column-${status.replace(/\s+/g, "-").toLowerCase()}`}
                   >
                     <div
-                      className="px-3 py-2.5 border-b border-slate-200/70 flex items-center justify-between bg-white/40"
+                      className="px-3 py-2.5 border-b border-slate-200/70 bg-white/40"
                       style={{ borderTopColor: meta.accent }}
                     >
-                      <div className="flex items-center gap-2">
+                     <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                         <span
                           className="w-1.5 h-1.5 rounded-full"
                           style={{ backgroundColor: meta.accent }}
@@ -244,9 +387,18 @@ export default function SprintBoard() {
                           · {colItems.length}
                         </span>
                       </div>
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 whitespace-nowrap">
                         {totalSp} SP
                       </span>
+                     </div>
+                      {colTasks[1] > 0 && (
+                        <div
+                          className="mt-1 text-[10px] font-mono text-slate-500"
+                          title={`${colTasks[0]} of ${colTasks[1]} tasks complete`}
+                        >
+                          {colTasks[0]}/{colTasks[1]} tasks complete
+                        </div>
+                      )}
                     </div>
                     <div className="p-2 space-y-2 min-h-[180px] max-h-[calc(100vh-280px)] overflow-y-auto scrollbar-thin">
                       {colItems.length === 0 && !snapshot.isDraggingOver && (
@@ -327,6 +479,10 @@ export default function SprintBoard() {
                                       </span>
                                     </div>
                                   </div>
+                                  <TaskActivity
+                                    stats={taskStats.get(item.id)}
+                                    done={item.status === "Done"}
+                                  />
                                 </div>
                               </div>
                             </div>

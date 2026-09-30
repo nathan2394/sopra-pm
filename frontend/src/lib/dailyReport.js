@@ -1,4 +1,4 @@
-import { STATUSES } from "@/lib/constants";
+import { TASK_STATUSES, taskStatus } from "@/lib/constants";
 
 /** Local date parts — toISOString() would shift the day at WIB (+07:00). */
 export const isoToday = () => {
@@ -26,7 +26,7 @@ export const formatDay = (iso) => {
 
 export const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-const emptyCounts = () => Object.fromEntries(STATUSES.map((s) => [s, 0]));
+const emptyCounts = () => Object.fromEntries(TASK_STATUSES.map((s) => [s, 0]));
 
 /**
  * One row per team member for the day's tasks: counts per status, blockers,
@@ -63,8 +63,9 @@ export function summarizeByMember(tasks, team) {
       });
     }
     const m = map.get(t.assignee_id);
-    m.tasks.push(t);
-    m.counts[t.status] = (m.counts[t.status] || 0) + 1;
+    const status = taskStatus(t.status);
+    m.tasks.push({ ...t, status });
+    m.counts[status] += 1;
     if (t.blocker) m.blocked += 1;
   });
   return [...map.values()]
@@ -73,11 +74,8 @@ export function summarizeByMember(tasks, team) {
 }
 
 const STATUS_MARK = {
-  Done: "✅",
-  "In Review": "🔍",
-  "In Progress": "🔄",
-  Pending: "⏸️",
-  Backlog: "•",
+  Complete: "✅",
+  Incomplete: "⬜",
 };
 
 /**
@@ -87,20 +85,20 @@ export function buildDailyReport(date, members) {
   const updated = members.filter((m) => m.updated);
   const missing = members.filter((m) => !m.updated);
   const tasks = updated.flatMap((m) => m.tasks);
-  const done = tasks.filter((t) => t.status === "Done").length;
+  const done = tasks.filter((t) => t.status === "Complete").length;
   const blocked = tasks.filter((t) => t.blocker).length;
 
   const lines = [
     `*Daily Task Report — ${formatDay(date)}*`,
-    `${updated.length}/${members.length} members updated · ${plural(tasks.length, "task")} · ${done} done` +
+    `${updated.length}/${members.length} members updated · ${plural(tasks.length, "task")} · ${done} complete` +
       (blocked ? ` · ${blocked} blocked` : ""),
     "",
   ];
 
   updated.forEach((m) => {
-    lines.push(`*${m.name}*${m.role ? ` (${m.role})` : ""} — ${plural(m.total, "task")}, ${m.counts.Done || 0} done`);
+    lines.push(`*${m.name}*${m.role ? ` (${m.role})` : ""} — ${plural(m.total, "task")}, ${m.counts.Complete || 0} complete`);
     const ordered = [...m.tasks].sort(
-      (a, b) => STATUSES.indexOf(b.status) - STATUSES.indexOf(a.status),
+      (a, b) => TASK_STATUSES.indexOf(b.status) - TASK_STATUSES.indexOf(a.status),
     );
     ordered.forEach((t) => {
       lines.push(

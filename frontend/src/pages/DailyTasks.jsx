@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { fetchDailyTasks, fetchProjects, fetchTeam, updateTask } from "@/lib/api";
-import { STATUSES, STATUS_COLORS } from "@/lib/constants";
+import { TASK_STATUSES, TASK_STATUS_COLORS, taskStatus } from "@/lib/constants";
+import TaskStatusToggle from "@/components/TaskStatusToggle";
 import { isoToday, isEvening, plural, summarizeByMember } from "@/lib/dailyReport";
+import { daysBetween } from "@/lib/insights";
 import DailyReportDialog from "@/components/DailyReportDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +17,16 @@ const GROUP_BY = [
 ];
 
 const GROUP_BY_KEY = "daily-tasks-group-by";
+
+// "day": what was registered or touched on one date (stand-up / today).
+// "until": everything created up to a date — the running list of what is
+// still open per member and project.
+const MODES = [
+  { value: "day", label: "Day" },
+  { value: "until", label: "Open until" },
+];
+
+const createdOn = (t) => (t.created_at || "").slice(0, 10);
 
 const readGroupBy = () => {
   try {
@@ -50,7 +62,8 @@ function ProjectTag({ code, color, title }) {
 }
 
 /** One task row. Which context columns show depends on how the list is grouped. */
-function TaskLine({ task: t, showAssignee = true, showItem = false, onStatus }) {
+function TaskLine({ task: t, showAssignee = true, showItem = false, showAge = false, onStatus }) {
+  const age = showAge && createdOn(t) ? daysBetween(createdOn(t), isoToday()) : null;
   return (
     <div
       className="px-4 py-2 flex items-center gap-3 text-sm"
@@ -86,23 +99,24 @@ function TaskLine({ task: t, showAssignee = true, showItem = false, onStatus }) 
         </span>
       )}
 
-      <select
-        value={t.status}
-        onChange={(e) => onStatus(t, e.target.value)}
-        className="rounded-sm h-7 text-[11px] border px-1.5 font-mono shrink-0"
-        style={{
-          borderColor: STATUS_COLORS[t.status]?.dot || "#CBD5E1",
-          color: STATUS_COLORS[t.status]?.text || "#475569",
-          backgroundColor: STATUS_COLORS[t.status]?.bg || "#fff",
-        }}
-        data-testid={`daily-task-status-${t.id}`}
-      >
-        {STATUSES.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
+      {age != null && t.status !== "Complete" && (
+        <span
+          className={`text-[10px] font-mono rounded-sm px-1 py-0.5 shrink-0 ${
+            age >= 7 ? "bg-amber-50 text-amber-800 font-bold" : "text-slate-500"
+          }`}
+          title={`Created ${createdOn(t)}`}
+          data-testid={`daily-task-age-${t.id}`}
+        >
+          {age === 0 ? "today" : `${age}d open`}
+        </span>
+      )}
+
+      <TaskStatusToggle
+        status={t.status}
+        onChange={(next) => onStatus(t, next)}
+        className="w-28"
+        testId={`daily-task-status-${t.id}`}
+      />
     </div>
   );
 }
@@ -125,7 +139,9 @@ export default function DailyTasks() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [mode, setMode] = useState("day");
   const [date, setDate] = useState(isoToday());
+  const [until, setUntil] = useState(isoToday());
   const [memberId, setMemberId] = useState(null);
   const [projectId, setProjectId] = useState("all");
   const [status, setStatus] = useState(null);
@@ -153,32 +169,38 @@ export default function DailyTasks() {
     let cancelled = false;
     setLoading(true);
     fetchDailyTasks({
-      ...(date ? { date } : {}),
+      ...(mode === "day" && date ? { date } : {}),
       ...(projectId !== "all" ? { project_id: projectId } : {}),
     })
-      .then((rows) => !cancelled && setTasks(rows))
+      .then((rows) => !cancelled && setTasks(rows.map((t) => ({ ...t, status: taskStatus(t.status) }))))
       .catch(() => !cancelled && setTasks([]))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [date, projectId]);
+  }, [mode, date, projectId]);
 
-  // With a project picked, a member without tasks in it hasn't "missed" anything.
+  const scoped = useMemo(
+    () => (mode === "until" ? tasks.filter((t) => createdOn(t) <= until) : tasks),
+    [tasks, mode, until],
+  );
+
+  // "Hasn't updated" only means something for a single day across every
+  // project; otherwise list just the members who have tasks in scope.
   const members = useMemo(() => {
-    const all = summarizeByMember(tasks, team);
-    return projectId === "all" && date ? all : all.filter((m) => m.updated);
-  }, [tasks, team, projectId, date]);
+    const all = summarizeByMember(scoped, team);
+    return mode === "day" && projectId === "all" && date ? all : all.filter((m) => m.updated);
+  }, [scoped, team, mode, projectId, date]);
   const updatedMembers = members.filter((m) => m.updated);
   const missingMembers = members.filter((m) => !m.updated);
 
   const memberTasks = useMemo(
-    () => (memberId == null ? tasks : tasks.filter((t) => t.assignee_id === memberId)),
-    [tasks, memberId],
+    () => (memberId == null ? scoped : scoped.filter((t) => t.assignee_id === memberId)),
+    [scoped, memberId],
   );
 
   const statusCounts = useMemo(() => {
-    const c = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    const c = Object.fromEntries(TASK_STATUSES.map((s) => [s, 0]));
     memberTasks.forEach((t) => (c[t.status] = (c[t.status] || 0) + 1));
     return c;
   }, [memberTasks]);
@@ -227,7 +249,7 @@ export default function DailyTasks() {
 
   const byStatus = useMemo(
     () =>
-      STATUSES.map((s) => ({ status: s, tasks: visible.filter((t) => t.status === s) })).filter(
+      TASK_STATUSES.map((s) => ({ status: s, tasks: visible.filter((t) => t.status === s) })).filter(
         (g) => g.tasks.length > 0,
       ),
     [visible],
@@ -244,27 +266,55 @@ export default function DailyTasks() {
     }
   };
 
-  const filtered = memberId != null || projectId !== "all" || status != null || !!date;
+  const filtered =
+    memberId != null || projectId !== "all" || status != null || (mode === "day" && !!date);
+
+  const switchMode = (next) => {
+    if (next === mode) return;
+    setMode(next);
+    // Open-until is for chasing what is left, so start on the open tasks.
+    setStatus(next === "until" ? "Incomplete" : null);
+  };
   const selectedMember = members.find((m) => m.id === memberId);
 
   return (
     <div className="space-y-4" data-testid="daily-page">
       {/* Filters */}
       <div className="bg-white border border-slate-200 rounded-sm p-4 flex items-center gap-3 flex-wrap">
-        <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">Date</div>
+        <div className="flex rounded-sm border border-slate-200 overflow-hidden" data-testid="daily-mode">
+          {MODES.map((m) => (
+            <button
+              type="button"
+              key={m.value}
+              onClick={() => switchMode(m.value)}
+              className={`px-3 h-9 text-xs font-semibold ${
+                mode === m.value ? "bg-[#0033CC] text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              aria-pressed={mode === m.value}
+              data-testid={`daily-mode-${m.value}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+          {mode === "day" ? "Date" : "Created up to"}
+        </div>
         <Input
           type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
+          value={mode === "day" ? date : until}
+          onChange={(e) =>
+            mode === "day" ? setDate(e.target.value) : setUntil(e.target.value || isoToday())
+          }
           className={`rounded-sm h-9 w-40 font-mono text-xs ${
-            date ? "border-[#0033CC] bg-[#0033CC]/5" : ""
+            mode === "until" || date ? "border-[#0033CC] bg-[#0033CC]/5" : ""
           }`}
           data-testid="daily-date"
         />
         <Button
           variant="outline"
           className="rounded-sm h-9 text-xs"
-          onClick={() => setDate(isoToday())}
+          onClick={() => (mode === "day" ? setDate(isoToday()) : setUntil(isoToday()))}
           data-testid="daily-today"
         >
           Today
@@ -294,7 +344,7 @@ export default function DailyTasks() {
             variant="ghost"
             className="rounded-sm h-9 text-xs text-slate-500"
             onClick={() => {
-              setDate("");
+              if (mode === "day") setDate("");
               setMemberId(null);
               setProjectId("all");
               setStatus(null);
@@ -309,7 +359,7 @@ export default function DailyTasks() {
           <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
             {plural(visible.length, "task")} · {plural(updatedMembers.length, "member")}
           </span>
-          {date && (
+          {mode === "day" && date && (
             <Button
               variant={isEvening() && date === isoToday() ? "default" : "outline"}
               className={`rounded-sm h-9 text-xs ${
@@ -350,7 +400,7 @@ export default function DailyTasks() {
                   <div className="leading-tight">
                     <div className="text-xs font-semibold text-slate-900">{m.name}</div>
                     <div className="text-[10px] font-mono text-slate-500">
-                      {plural(m.total, "task")} · {m.counts.Done || 0} done
+                      {plural(m.total, "task")} · {m.counts.Incomplete || 0} open
                       {m.blocked > 0 ? ` · ${m.blocked} blocked` : ""}
                     </div>
                   </div>
@@ -385,8 +435,8 @@ export default function DailyTasks() {
 
       {/* Status chips + view switch */}
       <div className="flex items-center gap-2 flex-wrap" data-testid="daily-statuses">
-        {STATUSES.map((s) => {
-          const c = STATUS_COLORS[s];
+        {TASK_STATUSES.map((s) => {
+          const c = TASK_STATUS_COLORS[s];
           const active = status === s;
           return (
             <button
@@ -458,7 +508,8 @@ export default function DailyTasks() {
         </div>
       ) : visible.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-sm p-8 text-center text-sm text-slate-400">
-          No tasks {date ? `touched on ${date}` : "found"}
+          No tasks{" "}
+          {mode === "until" ? `created up to ${until}` : date ? `touched on ${date}` : "found"}
           {memberId != null || status != null ? " for this filter" : ""}.
         </div>
       ) : groupBy === "member" ? (
@@ -485,6 +536,7 @@ export default function DailyTasks() {
                     task={t}
                     showAssignee={false}
                     showItem
+                    showAge={mode === "until"}
                     onStatus={setTaskStatus}
                   />
                 ))}
@@ -496,7 +548,7 @@ export default function DailyTasks() {
         /* Status -> tasks */
         <div className="space-y-4">
           {byStatus.map((g) => {
-            const c = STATUS_COLORS[g.status];
+            const c = TASK_STATUS_COLORS[g.status];
             return (
               <div
                 key={g.status}
@@ -513,7 +565,8 @@ export default function DailyTasks() {
                   style={{ borderLeftColor: c.dot }}
                 >
                   {g.tasks.map((t) => (
-                    <TaskLine key={t.id} task={t} showItem onStatus={setTaskStatus} />
+                    <TaskLine key={t.id} task={t} showItem showAge={mode === "until"}
+                    onStatus={setTaskStatus} />
                   ))}
                 </div>
               </div>
@@ -553,7 +606,8 @@ export default function DailyTasks() {
 
                     <div className="divide-y divide-slate-100">
                       {item.tasks.map((t) => (
-                        <TaskLine key={t.id} task={t} onStatus={setTaskStatus} />
+                        <TaskLine key={t.id} task={t} showAge={mode === "until"}
+                    onStatus={setTaskStatus} />
                       ))}
                     </div>
                   </div>
